@@ -74,6 +74,7 @@ required_checks() {
     "Test on ubuntu-latest" \
     "Test on macos-latest" \
     "Test on windows-latest" \
+    "E2E" \
     "License & Dependency Check" \
     "Supply Chain Review" \
     "Mutation Testing (diff)"

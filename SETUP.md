@@ -101,6 +101,7 @@ classic omission) means a bump merges with that job red.
 - `MSRV Check` — cheap; catches accidental use of post-MSRV features
 - `Lint` — fmt, clippy, doctest, cargo doc (ubuntu-only)
 - `Test on ubuntu-latest`, `Test on macos-latest`, `Test on windows-latest`
+- `E2E` — theoria-e2e drives a built gallery in Chromium
 - `License & Dependency Check`, `Supply Chain Review`
 - `Mutation Testing (diff)`, `Skill version guard`
 

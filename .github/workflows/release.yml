@@ -246,17 +246,23 @@ jobs:
       # skipped with a line saying so, but only on a 200; a 404 publishes
       # and any other answer fails the job. The tag check in semver-checks
       # is what keeps a forgotten version bump from landing here as a skip. Each crate is checked at its
-      # own version. A workspace whose crates depend on each other must
-      # publish them in dependency order, which `cargo metadata` does not
-      # guarantee: list them by hand here.
+      # own version. cargo resolves each crate's dependencies from
+      # crates.io, so theoria-macros goes before theoria, which depends on
+      # it; theoria-cli depends on neither and goes last, so the binary
+      # never ships ahead of the library it generates galleries for. A
+      # new publishable crate is added to this list by hand.
       - name: Publish to crates.io
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
           USER_AGENT: ${{ github.repository }} release workflow (https://github.com/${{ github.repository }})
         run: |
           set -euo pipefail
-          cargo metadata --no-deps --format-version 1 \
-            | jq -r '.packages[] | select(.publish != []) | "\(.name) \(.version)"' > "$RUNNER_TEMP/crates"
+          metadata=$(cargo metadata --no-deps --format-version 1)
+          for crate in theoria-macros theoria theoria-cli; do
+            version=$(jq -r --arg c "$crate" '.packages[] | select(.name == $c) | .version' <<< "$metadata")
+            if [ -z "$version" ]; then echo "::error::$crate is not in the workspace"; exit 1; fi
+            echo "$crate $version"
+          done > "$RUNNER_TEMP/crates"
           while read -r crate version; do
             status=$(curl -s -o /dev/null -w '%{http_code}' --retry 3 \
                        -A "$USER_AGENT" "https://crates.io/api/v1/crates/$crate/$version")

@@ -54,7 +54,7 @@ jobs:
       - name: Install MSRV toolchain
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
-          toolchain: "1.88"
+          toolchain: "1.95"
 
       # If your crate uses `include_bytes!` against build-generated
       # artifacts (wasm pkgs, codegen output, etc.), stub them with
@@ -87,8 +87,12 @@ jobs:
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+      # theoria-e2e is outside the workspace, so the step above skips it.
+      - name: Run clippy (theoria-e2e)
+        run: cargo clippy --manifest-path crates/theoria-e2e/Cargo.toml --all-targets -- -D warnings
+
       # nextest does not run doctests, so this is its own step. The
-      # crate keeps at least one doctest (the seed's `classify` has one),
+      # crate keeps at least one doctest (`Story::new` in theoria has one),
       # which is what makes this step honest; delete the step if the
       # crate ever has none rather than running a no-op. The guard is on
       # the library target, not on doctests: `cargo test --doc` errors
@@ -142,3 +146,53 @@ jobs:
       # pass is reported FLAKY instead of hiding, and a longer slow-timeout.
       - name: Run tests
         run: cargo nextest run --workspace --profile ci
+
+  e2e:
+    name: E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # theoria's own dogfood gate: build a gallery from theoria's components
+    # through theoria-cli and Trunk, then drive it in Chromium with
+    # playwright-rs. This is the only check on the Leptos view code and on
+    # the CLI's build path, both out of mutation testing's reach.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          shared-key: e2e
+          workspaces: |
+            .
+            crates/theoria-e2e
+
+      - name: Install Trunk and cargo-nextest
+        uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
+        with:
+          tool: trunk,cargo-nextest
+          fallback: none
+
+      - name: Build the gallery
+        run: cargo run --locked -p theoria-cli -- build --config theoria-e2e.toml
+
+      # The tests pass without running when the gallery is missing (they
+      # print "skipping" and return), so a build that put it anywhere else
+      # would turn this job green with no browser check run.
+      - name: Check the gallery was built
+        run: test -f target/theoria/gallery/theoria/dist/index.html
+
+      # The version must match the PLAYWRIGHT_VERSION of the playwright-rs
+      # revision in crates/theoria-e2e/Cargo.lock; nothing checks it.
+      - name: Install Playwright browsers
+        run: npx playwright@1.64.1 install --with-deps chromium
+
+      # Under nextest so the slow-timeout in .config/nextest.toml applies.
+      # The e2e crate is its own workspace root, so the config is named.
+      - name: Run e2e
+        run: cargo nextest run --locked --manifest-path crates/theoria-e2e/Cargo.toml --config-file .config/nextest.toml --profile ci
