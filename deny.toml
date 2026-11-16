@@ -19,7 +19,9 @@ feature-depth = 1
 # here, so nothing mirrors this list and nothing can drift from it. Give
 # each entry a reason:
 #   { id = "RUSTSEC-2026-XXXX", reason = "no fix upstream; not reachable from our call graph" }
-ignore = []
+ignore = [
+    { id = "RUSTSEC-2024-0436", reason = "paste is archived; a proc-macro under leptos 0.8 (either_of, reactive_graph, tachys), compile time only; no leptos release drops it" },
+]
 
 [licenses]
 allow = [
@@ -66,4 +68,4 @@ skip-tree = []
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
+allow-git = ["https://github.com/padamson/leptotes"]

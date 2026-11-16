@@ -1,0 +1,19 @@
+# Standalone (excluded from the workspace): theoria's own browser e2e. Serves a
+# gallery built from theoria's OWN components-as-fixtures and drives it with
+# playwright-rs.
+[package]
+name = "theoria-e2e"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/padamson/theoria"
+authors = ["Paul Adamson"]
+publish = false
+
+[dev-dependencies]
+playwright-rs = { git = "https://github.com/padamson/playwright-rust", branch = "main" }
+tokio = { version = "1", features = ["full"] }
+axum = "0.8"
+tower-http = { version = "0.7", features = ["fs"] }
+anyhow = "1"

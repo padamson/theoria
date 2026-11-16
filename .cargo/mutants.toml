@@ -25,11 +25,17 @@ test_workspace = true
 # browser suites that no mutant in a logic crate can fail:
 # additional_cargo_test_args = ["-E", "not test(/e2e|slow/)"]
 
-# Limit which source files are mutated, by directory. Examples:
-#   - single-crate: ["src/**/*.rs"]
-#   - workspace, one focus crate: ["my-crate/src/**/*.rs"]
-#   - workspace, all crates: ["crates/*/src/**/*.rs"]
-examine_globs = ["src/**/*.rs"]
+# theoria-cli (gallery generation) and theoria-macros (the `#[story]` type
+# mapping and doc and source extraction), as in slp. theoria is left out
+# for now: its leptotes tests catch about half its mutants, but the rest
+# are in the `*.stories.rs` files and the csr-only localStorage code,
+# which the native test build never compiles, and two are real gaps
+# (`story_nav.rs` and `gallery.rs`). Adding it waits on excluding the first
+# two and closing the last.
+examine_globs = [
+    "crates/theoria-cli/src/**/*.rs",
+    "crates/theoria-macros/src/**/*.rs",
+]
 
 # Keep codegen output and test doubles out of scope. Generated code
 # (panschema, prost, tonic, bindgen) has its source of truth in the
@@ -38,7 +44,15 @@ examine_globs = ["src/**/*.rs"]
 # exclude_globs = ["src/generated/**/*.rs", "src/fakes.rs"]
 
 # Every exclude carries its equivalence argument next to it.
-# exclude_re = [
-#   # shoelace: += -> -= is .abs()'d two lines later, so the sign is lost
-#   "shoelace_area.*replace \\+= with -=",
-# ]
+exclude_re = [
+    # theoria-cli `main` and `trunk`: I/O orchestration (parse args, shell
+    # out to `trunk`). theoria-e2e exercises them end to end by building
+    # the gallery through the CLI; no native test can.
+    'replace main -> Result',
+    'replace trunk -> Result',
+    'delete ! in trunk',
+    # theoria-macros `story`: the proc_macro to proc_macro2 adapter, which
+    # cannot be called outside a proc-macro context. The logic is in
+    # `story_impl`, which the tests cover.
+    'replace story -> TokenStream with Default::default\(\)',
+]

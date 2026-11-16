@@ -1,28 +1,36 @@
-[package]
-name = "my-project"
+[workspace]
+# theoria is a Leptos library that enables no runtime of its own; its tests
+# render it under `ssr` through leptotes, so the members resolve Leptos with
+# the ssr backend.
+members = [
+    "crates/theoria",
+    "crates/theoria-cli",
+    "crates/theoria-macros",
+]
+# theoria-e2e drives a built gallery in a browser with playwright-rs. It
+# stays out of the workspace, with its own lockfile and CI job, so
+# workspace-wide commands stay native and fast.
+exclude = ["crates/theoria-e2e"]
+resolver = "3"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.95"
 license = "MIT OR Apache-2.0"
-description = "A short description of your project"
-repository = "https://github.com/OWNER/REPO"
-authors = ["Your Name"]
-categories = []
-keywords = []
+repository = "https://github.com/padamson/theoria"
+authors = ["Paul Adamson"]
 
-[lints.rust]
+[workspace.dependencies]
+theoria-macros = { path = "crates/theoria-macros", version = "0.1.0" }
+
+[workspace.lints.rust]
 # Nothing here has a reason to reach for unsafe. `deny` (not `forbid`)
 # leaves a targeted `#[allow(unsafe_code)]` escape hatch if a future FFI
 # edge genuinely needs one.
 unsafe_code = "deny"
 
-# The place for the clippy lints this crate turns on; the template imposes
-# none. After converting to a workspace, move both tables to
-# `[workspace.lints.*]` and give each crate `[lints] workspace = true`.
-[lints.clippy]
-
-[dependencies]
-
-[dev-dependencies]
-# Scratch directories for the integration-test fixture in tests/common.
-tempfile = "3"
+# The policy the crates were written under in slp.
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }

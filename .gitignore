@@ -1,5 +1,7 @@
 # Build artifacts
 /target
+# The e2e crate sits outside the workspace and builds into its own target/.
+/crates/theoria-e2e/target
 
 # cargo-mutants output (current run + rotated previous run)
 /mutants.out/
