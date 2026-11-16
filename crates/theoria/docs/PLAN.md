@@ -2,8 +2,8 @@
 
 A component explorer (gallery) for Leptos: preview components in isolation via
 "stories" — Storybook, in miniature. Incubated as a crate in the slp workspace
-and dogfooded against `slp-ui`; spun out to its own repo (via `git subtree
-split`) once the API stabilizes.
+and dogfooded against `slp-ui`; moved to its own repository, with its history,
+in November 2026.
 
 ## Demand-driven (the governing rule)
 
@@ -24,13 +24,70 @@ items move to "in progress" when slp pulls them.
   behavior is covered by a playwright e2e (`theoria-e2e`) driving a gallery built
   from theoria's *own* components as fixtures — never a `Gallery` inside a
   `Gallery`.
-- **Spin-out unit:** `theoria` + `theoria-cli` + `theoria-e2e` travel together.
+- **One repository:** `theoria`, `theoria-macros`, `theoria-cli`, and
+  `theoria-e2e` live and release together.
 
 ## Backlog
 
 The story catalog and one sliced doc per story are the **single source of
 truth** in [`docs/stories/`](stories/README.md) — this overview does not repeat
 them. Stories are pulled on demand (see the rule above); the index marks status.
+
+### Known defects
+
+Found by the code and test reviews when theoria moved to its own repository,
+and not fixed in the move. Unlike stories, these are wrong behavior in what
+already ships, so they are fixed when found to matter, not pulled. The first
+blocks any consumer outside this repository.
+
+- **The generated harness depends on theoria by path** (`theoria-cli`,
+  `generate`). `theoria_path` defaults to `crates/theoria`, which exists only
+  here. A consumer whose stories crate takes theoria from git or crates.io
+  gets a second `theoria` crate, and `Gallery`'s `Vec<Story>` no longer
+  matches the aggregator's. The harness should take theoria from wherever the
+  stories crate does.
+- **Windows paths break the generated TOML** (`theoria-cli`, `generate`).
+  Paths go into `Cargo.toml` and `Trunk.toml` as basic strings with no
+  escaping, so a path with backslashes does not parse. The Windows test job
+  never parses the generated file. Emit the TOML with the `toml` crate or as
+  literal strings.
+- **The harness has no lockfile** (`theoria-cli`, `generate`). It is its own
+  workspace, so each `theoria build` resolves leptos and the rest fresh,
+  outside `Cargo.lock`, cargo-deny, and cargo-vet.
+- **The number control rewrites what you type** (`Controls`). `prop:value`
+  writes the parsed `f64` back on every keystroke, so `1.` becomes `1` and
+  typing `1.5` gives `15`; `2.0` cannot be typed.
+- **`#[story]` ignores attribute typos** (`story_impl`). An entry that names
+  no parameter, or one that is not `key = value`, is dropped without an
+  error, and a parameter named `name` can never get a default.
+- **`#[story]` drops the function's other attributes and visibility**
+  (`story_impl`). The generated constructor is always `pub fn`, and a
+  `#[cfg]`, `#[allow]`, or `#[deprecated]` after `#[story]` is lost.
+- **"Show code" can lose braces** (`body_source`). `trim_start_matches('{')`
+  and `trim_end_matches('}')` strip every brace in a run, so a body ending
+  `}}` shows unbalanced, and the fallback without source text quotes the
+  whole function, signature and doc attributes included.
+- **Doc-comment indentation is lost** (`doc_description`). Each line is
+  trimmed, so nested lists and indented code blocks render flat in autodocs.
+  Strip only the one leading space rustdoc adds.
+- **The e2e suite clicks stories by text** (`theoria-e2e`,
+  `every_story_renders_and_selects`). Two stories with the same leaf label in
+  different groups make the click ambiguous. Click by index on the sidebar's
+  buttons.
+
+### Test debt
+
+- **theoria-e2e passes when the gallery is missing.** Each test returns
+  `Ok(())` instead of being `#[ignore]`d with a reason. CI checks the build
+  first, which covers the job but not a local run.
+- **theoria is outside mutation testing.** Its leptotes tests catch 19 of its
+  40 mutants. The survivors are in the `*.stories.rs` files and the csr-only
+  `localStorage` code, which the native build never compiles, plus two real
+  gaps: `+` to `*` in `story_nav.rs`'s tree builder and `==` to `!=` in
+  `gallery.rs`. Adding `crates/theoria/src` to `.cargo/mutants.toml` waits on
+  excluding the first two and closing the last.
+- **Prose-shaped asserts.** `story_nav.tests.rs` chains eleven `contains` in
+  one assert, and `theoria-macros`' tests compare stringified tokens.
 
 ## Storybook parity roadmap
 
