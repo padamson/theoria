@@ -1,45 +1,74 @@
-<!-- Replace "Project Name" with your project name. -->
-# Project Name
+# theoria
 
-<!-- Replace this line with a one-sentence description of your project. -->
+A component explorer for [Leptos](https://leptos.dev): Storybook in
+miniature. You write stories (named previews of your components, with
+editable args), and the `theoria` CLI generates a small Trunk app that
+shows them in a gallery with a sidebar, live controls, the story's source,
+and its doc comment rendered as Markdown. The name is Greek θεωρία,
+"viewing."
 
-<!--
-Template users: after creating your repo from this template, see SETUP.md
-for the full onboarding checklist. At minimum, replace every occurrence of
-`my-project` and `Project Name` throughout this file, and update
-`Cargo.toml` (name, description, repository, authors, keywords, categories).
--->
+theoria is young and its API will change. Nothing is on crates.io yet.
 
-## Installation
+## Writing stories
 
-<!-- Replace `my-project` with your crate name. -->
-```bash
-cargo install my-project
+A story is a `theoria::Story`. Build one by hand:
+
+```rust
+use leptos::prelude::*;
+use theoria::Story;
+
+let story = Story::new("Buttons/Primary", || view! { <button>"Save"</button> });
 ```
 
-## Usage
+or with `#[story]`, where each typed parameter becomes a control (`bool`
+is a toggle, `f64` a number, `String` a text box) and the attribute sets
+the defaults:
 
-<!-- Replace `my-project` with your binary name, or replace this section
-     entirely with library usage examples if this is a library crate. -->
-```bash
-my-project --help
+```rust
+use leptos::prelude::*;
+use theoria::story;
+
+/// The yard canvas, drawn to scale.
+#[story(name = "Canvas/Yard", yard_w = 70.0, yard_d = 30.0)]
+fn yard(yard_w: f64, yard_d: f64) -> impl IntoView {
+    view! { <Yard yard_w=yard_w yard_d=yard_d /> }
+}
 ```
+
+The `/` in a name nests the story in the sidebar. Your crate exposes a
+function returning `Vec<theoria::Story>`, usually behind a `stories`
+feature so production builds leave the stories out.
+
+## Serving the gallery
+
+Point a `theoria.toml` at that function:
+
+```toml
+[gallery]
+crate = "my-components"            # the package name
+path = "crates/my-components"      # relative to this file
+aggregator = "my_components::all_stories"
+features = ["stories"]
+theoria_path = "../theoria/crates/theoria"
+```
+
+Then:
+
+```bash
+cargo install --locked --git https://github.com/padamson/theoria theoria-cli
+theoria serve          # http://localhost:8081, rebuilt on every source edit
+theoria build          # a static gallery under target/theoria/gallery
+```
+
+The generated app depends on theoria by path (`theoria_path`, default
+`crates/theoria`), so for now the gallery needs a checkout of this repo
+beside your crate. It also needs the `wasm32-unknown-unknown` target and
+[Trunk](https://trunkrs.dev).
 
 ## Agent skill
 
-<!-- Template users: keep this block if the crate ships a skill under
-     `skills/`; delete it (and the skills/ directory) if not. SETUP.md has
-     the checklist. -->
-[![skills.sh](https://skills.sh/b/OWNER/REPO)](https://skills.sh/OWNER/REPO)
-
-```bash
-npx skills add OWNER/REPO
-```
-
-Works with [Claude Code](https://claude.ai/code),
-[Codex](https://openai.com/codex/), [Cursor](https://cursor.com), and any
-other [compatible agent](https://agentskills.io/clients). The install copies
-the skill into your repo and records its source in `skills-lock.json`.
+`skills/theoria-usage/` holds the start of an agent skill for writing
+stories. It is hidden from installers until the API settles.
 
 ## Development
 
@@ -47,14 +76,17 @@ See [CLAUDE.md](CLAUDE.md) for development commands.
 
 ### Prerequisites
 
-- [Rust toolchain](https://rustup.rs/) (MSRV: 1.88)
+- [Rust toolchain](https://rustup.rs/) (MSRV: 1.95)
 - [prek](https://github.com/j178/prek) for pre-commit hooks: `cargo install prek && prek install --overwrite`
+- For the gallery and its browser tests: `rustup target add wasm32-unknown-unknown`, `cargo install trunk`, and `npx playwright@1.64.1 install chromium`
 
 ### Build and test
 
 ```bash
 cargo build
 cargo nextest run
+cargo run -p theoria-cli -- build --config theoria-e2e.toml
+cargo test --manifest-path crates/theoria-e2e/Cargo.toml
 ```
 
 ## License

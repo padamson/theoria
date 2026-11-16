@@ -23,8 +23,10 @@ Thumbs.db
 # crate depends on). The pin lives in skills-lock.json, which is tracked;
 # the content is fetched, so it is not vendored here. The Claude Code entry
 # points are symlinks into .agents/, and a tracked symlink would dangle in
-# any clone that has not run the install. A crate that uses its own shipped
-# skill in-repo adds `!/.claude/skills/<name>` here and tracks that one
-# symlink, whose target lives under skills/.
+# any clone that has not run the install. theoria's shipped skill lives in
+# skills/ and is never installed here. The contributor skill is written
+# here and tracked, so it is the one negation. The `/*` matters: git cannot
+# re-include anything under a directory that is itself ignored.
 /.agents/
-/.claude/skills/
+/.claude/skills/*
+!/.claude/skills/theoria-dev/

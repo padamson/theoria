@@ -1,6 +1,24 @@
-# Project Name
+# theoria
 
-<!-- Replace with a one-line description of what this project does -->
+A component explorer for Leptos, Storybook in miniature: a crate writes
+"stories" (named previews of its components, with editable args), and the
+`theoria` CLI generates and serves a gallery that shows them one at a time.
+Three published crates and one test crate:
+
+- `crates/theoria`: the gallery components and `Story`.
+- `crates/theoria-macros`: `#[story]`, which turns a function's typed
+  parameters into live controls and captures its source and doc comment.
+- `crates/theoria-cli`: the `theoria` binary (`serve`, `build`,
+  `generate`), which writes a Trunk app under `target/theoria/gallery`
+  from a `theoria.toml` and runs Trunk on it.
+- `crates/theoria-e2e` (outside the workspace): builds a gallery from
+  theoria's own components (`theoria-e2e.toml`) and drives it in Chromium
+  with playwright-rs.
+
+The plan and the backlog are in `crates/theoria/docs/PLAN.md` and
+`crates/theoria/docs/stories/`. A story or slice is built when a consumer
+needs it, not before. theoria's components are tested with leptotes, never
+by previewing theoria inside theoria.
 
 ## Development
 
@@ -14,6 +32,29 @@ cargo deny --workspace check bans licenses sources  # licenses, bans, sources
 prek run cargo-lockpatrol --all-files  # advisories in every tracked Cargo.lock (ignore list: deny.toml)
 cargo vet                # supply chain review
 ```
+
+The gallery and its browser tests need the wasm target, Trunk, and
+Chromium for Playwright (once per machine: `rustup target add
+wasm32-unknown-unknown`, `cargo install trunk`, `npx playwright@1.64.1
+install chromium`):
+
+```bash
+cargo run -p theoria-cli -- serve --config theoria-e2e.toml  # theoria's own stories on :8081
+cargo run -p theoria-cli -- build --config theoria-e2e.toml  # build the e2e gallery
+cargo nextest run --manifest-path crates/theoria-e2e/Cargo.toml --config-file .config/nextest.toml  # drive it in Chromium
+cargo clippy --manifest-path crates/theoria-e2e/Cargo.toml --all-targets -- -D warnings
+```
+
+A session runs the e2e tests with the `cargo nextest run` line above, as
+the first command of its own Bash call, which the sandbox's `cargo nextest
+run *` exclusion covers. `cargo test` on the same crate is sandboxed, and
+Chromium dies at launch (`bootstrap_check_in ... Permission denied`). The
+tests also pass without running when the gallery is missing, so check that
+`target/theoria/gallery/theoria/dist/index.html` exists first.
+
+`serve` rebuilds on any change under the stories crate's `src/` or
+theoria's, since the generated `Trunk.toml` watches both. A change to the
+config file needs a re-run, because the harness is generated once at start.
 
 ## Claude Code sandbox
 
@@ -58,6 +99,9 @@ what a pass looks like; CI is the backstop, not the plan.
 - A change to `.claude/settings.json`: the sandbox denies writes to it,
   so apply the edit by hand, then run `/sandbox` in a new session. A pass
   is the resolved config showing the change.
+- A change to the contributor skill: copy the session's draft into
+  `.claude/skills/theoria-dev/`. A pass is `git status` showing the file
+  as modified or new, not ignored.
 - A new consumed skill: `npx skills add <owner>/<repo>` (Agent skills,
   below). A pass is one entry per skill in `ls -l .claude/skills/`.
 - A new public API's rustdoc: `cargo doc --open`, since `open` is blocked
@@ -86,9 +130,18 @@ Dependabot malware alerts, and the crate's Trusted Publisher.
 
 ## Agent skills
 
-`skills/my-project/` is the skill this crate ships to consumers. Edits to
-it must bump `metadata.version` in its `SKILL.md`; the pre-commit hook
-and the `Skill version guard` CI job both enforce that.
+`.claude/skills/theoria-dev/` is the contributor skill: the crate split,
+how components, stories, and tests are wired, what each kind of test and
+mutation testing covers, the CLI's harness, the backlog, and the release
+order. It is tracked, Claude Code loads it in every session here, and it
+is never shipped. The sandbox denies writes under `.claude/skills/`, so a
+session drafts a change to it elsewhere and you copy it in.
+
+`skills/theoria-usage/` is the skill theoria will ship to crates that
+write stories. It stays hidden from installers (`metadata.internal: true`)
+until the API settles. Edits to it must bump `metadata.version` in its
+`SKILL.md`; the pre-commit hook and the `Skill version guard` CI job both
+enforce that.
 
 Skills of tools this crate depends on are managed installs, not vendored:
 `skills-lock.json` (tracked) records each source and a content hash, and
@@ -137,14 +190,15 @@ narrows from there.
 ## Tests
 
 A test is a claim about behavior, named as the claim, one claim per
-test, asserting the value (`assert_eq!` on an enum, `matches!` on the
-error variant and what it names) rather than prose. The seed crate shows
-the shapes: a decision returned as a value, an error that carries the
-offending input, an environment read through an injected lookup, a
-`TempDir`-owning fixture and a bounded poll in `tests/common/mod.rs`,
-and one `#[ignore = "reason; run with ..."]` test as the gate for
-anything a fresh clone may lack. Never `return` from a test because a
-precondition is missing.
+test, asserting the value rather than prose: `assert_eq!` on a story's
+name and args, `matches!` on an `ArgControl` variant, the rendered HTML
+from `leptotes::render`. Components live in `src/components/` as
+`<name>.rs`, with `<name>.stories.rs` (behind the `stories` feature) and
+`<name>.tests.rs` beside it. A test that needs something a fresh clone may
+lack is gated with `#[ignore = "reason; run with ..."]`. Never `return`
+from a test because a precondition is missing. theoria-e2e still does,
+when the gallery is not built, until it is converted; CI checks the
+gallery exists before running it.
 
 `.config/nextest.toml` bounds every test with a slow-timeout; the hook
 runs the default profile (no retries) and CI runs `--profile ci` (one
@@ -177,4 +231,6 @@ every push, and the tag's vet gate with it. The tag's run then finds the
 version on crates.io, skips the publish, and creates the GitHub Release.
 A crate new to the workspace gets the same order.
 
-<!-- Add custom skills under .claude/skills/ as needed -->
+`theoria` depends on `theoria-macros` through crates.io once published, so
+the first versions go out by hand in the order `release.yml` uses:
+`theoria-macros`, then `theoria`, then `theoria-cli`.
