@@ -33,12 +33,13 @@ prek run cargo-lockpatrol --all-files  # advisories in every tracked Cargo.lock 
 cargo vet                # supply chain review
 ```
 
-The gallery and its browser tests need the wasm target, Trunk, and
-Chromium for Playwright (once per machine: `rustup target add
-wasm32-unknown-unknown`, `cargo install trunk`, `npx playwright@1.64.1
-install chromium`):
+The gallery and its browser tests need the wasm target and Trunk (once
+per machine: `rustup target add wasm32-unknown-unknown`, `cargo install
+trunk`), and the Chromium revision the locked playwright-rs expects, which
+the first line below installs (again after a playwright-rs bump):
 
 ```bash
+cargo run --manifest-path crates/theoria-e2e/Cargo.toml --example install-browsers
 cargo run -p theoria-cli -- serve --config theoria-e2e.toml  # theoria's own stories on :8081
 cargo run -p theoria-cli -- build --config theoria-e2e.toml  # build the e2e gallery
 cargo nextest run --manifest-path crates/theoria-e2e/Cargo.toml --config-file .config/nextest.toml  # drive it in Chromium

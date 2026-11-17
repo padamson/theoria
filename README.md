@@ -78,7 +78,7 @@ See [CLAUDE.md](CLAUDE.md) for development commands.
 
 - [Rust toolchain](https://rustup.rs/) (MSRV: 1.95)
 - [prek](https://github.com/j178/prek) for pre-commit hooks: `cargo install prek && prek install --overwrite`
-- For the gallery and its browser tests: `rustup target add wasm32-unknown-unknown`, `cargo install trunk`, and `npx playwright@1.64.1 install chromium`
+- For the gallery and its browser tests: `rustup target add wasm32-unknown-unknown`, `cargo install trunk`, and `cargo run --manifest-path crates/theoria-e2e/Cargo.toml --example install-browsers` for Chromium
 
 ### Build and test
 

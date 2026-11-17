@@ -40,6 +40,15 @@ repos:
         types: [rust]
         pass_filenames: false
 
+      # theoria-e2e is outside the workspace, so `--all` above skips it.
+      - id: cargo-fmt-e2e
+        name: cargo fmt (theoria-e2e)
+        description: Auto-format the excluded e2e crate
+        entry: cargo fmt --manifest-path crates/theoria-e2e/Cargo.toml
+        language: system
+        files: ^crates/theoria-e2e/
+        pass_filenames: false
+
       - id: cargo-clippy
         name: cargo clippy
         description: Run clippy linter

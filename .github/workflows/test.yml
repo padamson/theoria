@@ -84,6 +84,10 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      # theoria-e2e is outside the workspace, so `--all` above skips it.
+      - name: Check formatting (theoria-e2e)
+        run: cargo fmt --manifest-path crates/theoria-e2e/Cargo.toml -- --check
+
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
 
@@ -187,10 +191,12 @@ jobs:
       - name: Check the gallery was built
         run: test -f target/theoria/gallery/theoria/dist/index.html
 
-      # The version must match the PLAYWRIGHT_VERSION of the playwright-rs
-      # revision in crates/theoria-e2e/Cargo.lock; nothing checks it.
-      - name: Install Playwright browsers
-        run: npx playwright@1.64.1 install --with-deps chromium
+      # No Playwright version here: the example asks playwright-rs for the
+      # browser its driver expects, so a bump in the e2e lockfile moves the
+      # browser too (crates/theoria-e2e/examples/install-browsers.rs says
+      # why). `--with-deps` adds the system libraries a fresh runner lacks.
+      - name: Install Chromium for the bundled Playwright driver
+        run: cargo run --locked --manifest-path crates/theoria-e2e/Cargo.toml --example install-browsers -- --with-deps
 
       # Under nextest so the slow-timeout in .config/nextest.toml applies.
       # The e2e crate is its own workspace root, so the config is named.
