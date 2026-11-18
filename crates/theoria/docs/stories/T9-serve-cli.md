@@ -16,7 +16,7 @@ gallery app — the Storybook `dev` experience for theoria.
 - **T9.1 — build / serve via Trunk**
   - [x] `theoria serve` serves with hot reload; `theoria build` builds
 - **T9.2 — watch the source crate (true hot reload)**
-  - [x] the generated `Trunk.toml` watches the source crates' `src/`, so editing
+  - [x] the generated `Trunk.toml` watches the stories crate's `src/`, so editing
     a component or its `*.stories.rs` rebuilds and refreshes the browser
 
 ## Notes / refs

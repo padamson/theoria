@@ -3,7 +3,7 @@ name: theoria-usage
 description: Use when writing or reviewing theoria stories for Leptos components (`theoria::Story`, the `#[story]` attribute, a crate's `stories` feature and aggregator function), when setting up or debugging a `theoria.toml` and the `theoria serve` or `theoria build` gallery, or when deciding whether a check belongs in a story, a leptotes test, or a playwright-rust end-to-end test.
 license: MIT OR Apache-2.0
 metadata:
-  version: "0.1.0"
+  version: "0.1.1"
   internal: true
 ---
 
@@ -24,10 +24,11 @@ changed live, before or instead of wiring it into the app.
 A crate writes stories: `Story::new(name, || view! { ... })`, or a
 function under `#[story(...)]` whose typed parameters (`bool`, `f64`,
 `String`) become controls and whose doc comment becomes the description.
-It collects them in a function returning `Vec<theoria::Story>`, behind a
+It collects them in a function returning `theoria::Stories`, behind a
 `stories` feature. `theoria.toml` names that crate and function, and the
 `theoria` CLI generates a Trunk app under `target/theoria/gallery` that
-mounts `theoria::Gallery` with them.
+calls `.mount()` on the function's value, so the app and the stories share
+one theoria (and one Leptos) wherever it comes from.
 
 A story is for looking. A claim about the rendered HTML belongs in a
 leptotes test, and a claim about behavior in the browser (clicks,

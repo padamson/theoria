@@ -37,23 +37,20 @@ them. Stories are pulled on demand (see the rule above); the index marks status.
 
 Found by the code and test reviews when theoria moved to its own repository,
 and not fixed in the move. Unlike stories, these are wrong behavior in what
-already ships, so they are fixed when found to matter, not pulled. The first
-blocks any consumer outside this repository.
+already ships, so they are fixed when found to matter, not pulled.
 
-- **The generated harness depends on theoria by path** (`theoria-cli`,
-  `generate`). `theoria_path` defaults to `crates/theoria`, which exists only
-  here. A consumer whose stories crate takes theoria from git or crates.io
-  gets a second `theoria` crate, and `Gallery`'s `Vec<Story>` no longer
-  matches the aggregator's. The harness should take theoria from wherever the
-  stories crate does.
-- **Windows paths break the generated TOML** (`theoria-cli`, `generate`).
-  Paths go into `Cargo.toml` and `Trunk.toml` as basic strings with no
-  escaping, so a path with backslashes does not parse. The Windows test job
-  never parses the generated file. Emit the TOML with the `toml` crate or as
-  literal strings.
 - **The harness has no lockfile** (`theoria-cli`, `generate`). It is its own
   workspace, so each `theoria build` resolves leptos and the rest fresh,
-  outside `Cargo.lock`, cargo-deny, and cargo-vet.
+  outside `Cargo.lock`, cargo-deny, and cargo-vet. For the same reason a
+  `[patch]` in the stories crate's workspace does not reach the harness: a
+  crate that patches theoria (or anything else) to a checkout gets the
+  unpatched version in the gallery, or no build if that version is not
+  published.
+- **A theoria taken by path is not watched** (`theoria-cli`, `generate`).
+  `Trunk.toml` watches only the stories crate's `src/`, so with theoria
+  checked out beside a consumer, an edit to theoria rebuilds the gallery
+  only on the next save in the stories crate. A `watch` list in
+  `theoria.toml` would cover it and any other path dependency.
 - **The number control rewrites what you type** (`Controls`). `prop:value`
   writes the parsed `f64` back on every keystroke, so `1.` becomes `1` and
   typing `1.5` gives `15`; `2.0` cannot be typed.
@@ -77,6 +74,9 @@ blocks any consumer outside this repository.
 
 ### Test debt
 
+- **No Windows job builds a generated harness.** The CLI's tests parse the
+  generated `Cargo.toml` and `Trunk.toml` with a `C:\` path, on every
+  platform, but cargo and Trunk never consume one on Windows.
 - **theoria-e2e passes when the gallery is missing.** Each test returns
   `Ok(())` instead of being `#[ignore]`d with a reason. CI checks the build
   first, which covers the job but not a local run.

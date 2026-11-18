@@ -28,11 +28,12 @@ mod story_nav_stories;
 /// All theoria stories (its own leaf components used as fixtures), so theoria can
 /// be previewed in its own gallery: `theoria serve --config theoria-e2e.toml`.
 #[cfg(feature = "stories")]
-pub fn stories() -> Vec<crate::Story> {
-    let mut stories = story_nav_stories::stories();
-    stories.extend(controls_stories::stories());
-    stories.extend(show_code_stories::stories());
-    stories
+pub fn stories() -> crate::Stories {
+    story_nav_stories::stories()
+        .into_iter()
+        .chain(controls_stories::stories())
+        .chain(show_code_stories::stories())
+        .collect()
 }
 
 #[cfg(test)]

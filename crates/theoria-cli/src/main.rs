@@ -2,8 +2,8 @@
 //! stories (the Storybook-style dev tool for theoria).
 //!
 //! It reads `theoria.toml`, **generates** a small Trunk app under
-//! `target/theoria/gallery` that mounts `theoria::Gallery` with the configured
-//! crate's `stories` aggregator, then runs Trunk on it. Nothing to hand-write or
+//! `target/theoria/gallery` that mounts the `theoria::Stories` the configured
+//! crate's aggregator returns, then runs Trunk on it. Nothing to hand-write or
 //! commit — the gallery harness is generated on every run.
 
 use std::fs;
@@ -13,6 +13,7 @@ use std::process::Command;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use serde::Deserialize;
+use toml::{Table, Value};
 
 #[derive(Parser)]
 #[command(
@@ -43,45 +44,41 @@ enum Cmd {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Config {
     gallery: GalleryConfig,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct GalleryConfig {
     /// Package name of the crate that exposes the stories (the dependency name).
     #[serde(rename = "crate")]
     krate: String,
     /// Path to that crate, relative to the config file.
     path: String,
-    /// Fully-qualified fn returning `Vec<theoria::Story>`, e.g. `my_components::all_stories`.
+    /// Fully-qualified fn returning `theoria::Stories`, e.g. `my_components::all_stories`.
     aggregator: String,
     /// Extra features to enable on the crate (csr is added automatically).
     #[serde(default)]
     features: Vec<String>,
-    /// Path to the theoria crate, relative to the config file.
-    #[serde(default = "default_theoria_path")]
-    theoria_path: String,
-}
-
-fn default_theoria_path() -> String {
-    "crates/theoria".to_string()
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    let config_path = cli
-        .config
-        .canonicalize()
-        .with_context(|| format!("config not found: {}", cli.config.display()))?;
+    // `absolute`, not `canonicalize`, whose Windows result is the verbatim
+    // `\\?\C:\...` form; these paths go into the harness for cargo and Trunk.
+    let config_path = std::path::absolute(&cli.config)
+        .with_context(|| format!("resolve config path {}", cli.config.display()))?;
     let repo_root = config_path
         .parent()
         .context("config file has no parent directory")?
         .to_path_buf();
-    let config: Config =
-        toml::from_str(&fs::read_to_string(&config_path).context("read theoria.toml")?)
-            .context("parse theoria.toml")?;
+    let config = fs::read_to_string(&config_path)
+        .with_context(|| format!("read config {}", config_path.display()))?;
+    let config: Config = toml::from_str(&config)
+        .with_context(|| format!("parse config {}", config_path.display()))?;
 
     // Per-crate output dir so different galleries (e.g. an app's components vs theoria's own
     // e2e fixtures) don't clobber each other.
@@ -102,41 +99,54 @@ fn main() -> Result<()> {
 }
 
 /// Write the generated Trunk gallery crate (`Cargo.toml`, `index.html`,
-/// `src/main.rs`) into `dir`.
+/// `src/main.rs`, `Trunk.toml`) into `dir`.
 fn generate(repo_root: &Path, dir: &Path, g: &GalleryConfig) -> Result<()> {
+    // The name becomes a bare key in the harness's `[dependencies]`.
+    let is_name_char = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
+    if g.krate.is_empty() || !g.krate.chars().all(is_name_char) {
+        bail!(
+            "`crate` must be a package name (letters, digits, `-`, `_`), got `{}`",
+            g.krate
+        );
+    }
     let target_abs = repo_root.join(&g.path);
-    let theoria_abs = repo_root.join(&g.theoria_path);
     if !target_abs.join("Cargo.toml").exists() {
         bail!("no crate found at {}", target_abs.display());
     }
+    let harness = render(&target_abs, g);
 
+    fs::create_dir_all(dir.join("src")).context("create gallery dir")?;
+    fs::write(dir.join("Cargo.toml"), harness.cargo_toml).context("write Cargo.toml")?;
+    fs::write(dir.join("src/main.rs"), harness.main_rs).context("write src/main.rs")?;
+    fs::write(dir.join("index.html"), GALLERY_INDEX_HTML).context("write index.html")?;
+    fs::write(dir.join("Trunk.toml"), harness.trunk_toml).context("write Trunk.toml")?;
+    Ok(())
+}
+
+/// The generated files that vary with the config.
+struct Harness {
+    cargo_toml: String,
+    main_rs: String,
+    trunk_toml: String,
+}
+
+/// `path` as a TOML string value, which escapes a Windows path's backslashes.
+fn toml_path(path: &Path) -> Value {
+    Value::String(path.display().to_string())
+}
+
+/// Render the harness for the stories crate at `target`.
+fn render(target: &Path, g: &GalleryConfig) -> Harness {
     let mut features = g.features.clone();
     if !features.iter().any(|f| f == "csr") {
         features.push("csr".to_string());
     }
-    let feat_list = features
-        .iter()
-        .map(|f| format!("\"{f}\""))
-        .collect::<Vec<_>>()
-        .join(", ");
-
-    // When the stories crate IS theoria (e.g. theoria's own e2e), emit a single
-    // theoria dependency with the merged features — otherwise we'd write the
-    // `theoria = ...` key twice (a duplicate-dependency error).
-    let deps = if g.krate == "theoria" {
-        format!(
-            "theoria = {{ path = \"{theoria}\", features = [{feat_list}] }}\n",
-            theoria = theoria_abs.display(),
-        )
-    } else {
-        format!(
-            "theoria = {{ path = \"{theoria}\", features = [\"csr\"] }}\n\
-             {krate} = {{ path = \"{target}\", features = [{feat_list}] }}\n",
-            theoria = theoria_abs.display(),
-            krate = g.krate,
-            target = target_abs.display(),
-        )
-    };
+    let mut stories_dep = Table::new();
+    stories_dep.insert("path".into(), toml_path(target));
+    stories_dep.insert(
+        "features".into(),
+        Value::Array(features.into_iter().map(Value::String).collect()),
+    );
 
     let cargo_toml = format!(
         "# GENERATED by `theoria` — do not edit; regenerated on each run.\n\
@@ -149,42 +159,45 @@ fn generate(repo_root: &Path, dir: &Path, g: &GalleryConfig) -> Result<()> {
          name = \"theoria-gallery\"\n\
          path = \"src/main.rs\"\n\n\
          [dependencies]\n\
-         leptos = {{ version = \"0.8\", features = [\"csr\"] }}\n\
          console_error_panic_hook = \"0.1\"\n\
-         {deps}\n\
+         {krate} = {stories_dep}\n\n\
          # Own workspace so it isn't absorbed by the parent repo's workspace.\n\
          [workspace]\n",
+        krate = g.krate,
+        stories_dep = Value::Table(stories_dep),
     );
 
+    // The harness declares no theoria or leptos of its own: either could
+    // resolve to a second crate, whose types would not match the stories
+    // crate's. `mount()` is a method on the aggregator's `theoria::Stories`,
+    // so the stories crate's theoria and leptos are the ones that mount.
     let main_rs = format!(
         "// GENERATED by `theoria` — do not edit.\n\
-         use leptos::mount::mount_to_body;\n\
-         use leptos::prelude::*;\n\n\
+         // `mount` is on the aggregator's `theoria::Stories`, behind theoria's\n\
+         // `csr` feature, which the stories crate's `csr` feature must enable.\n\
          fn main() {{\n    \
          console_error_panic_hook::set_once();\n    \
-         mount_to_body(|| view! {{ <theoria::Gallery stories={aggregator}() /> }});\n\
+         {aggregator}().mount();\n\
          }}\n",
         aggregator = g.aggregator,
     );
 
-    // Watch the source crates so editing a component or its stories hot-reloads.
+    // Watch the stories crate so editing a component or its stories hot-reloads.
     // Trunk otherwise only watches this generated harness dir, so source edits
     // would go unnoticed. (Don't watch the harness dir itself — its target/dist
     // would cause a rebuild loop.)
     let trunk_toml = format!(
         "# GENERATED by `theoria` — do not edit.\n\
          [watch]\n\
-         watch = [\"{target}/src\", \"{theoria}/src\"]\n",
-        target = target_abs.display(),
-        theoria = theoria_abs.display(),
+         watch = {watch}\n",
+        watch = Value::Array(vec![toml_path(&target.join("src"))]),
     );
 
-    fs::create_dir_all(dir.join("src")).context("create gallery dir")?;
-    fs::write(dir.join("Cargo.toml"), cargo_toml).context("write Cargo.toml")?;
-    fs::write(dir.join("src/main.rs"), main_rs).context("write src/main.rs")?;
-    fs::write(dir.join("index.html"), GALLERY_INDEX_HTML).context("write index.html")?;
-    fs::write(dir.join("Trunk.toml"), trunk_toml).context("write Trunk.toml")?;
-    Ok(())
+    Harness {
+        cargo_toml,
+        main_rs,
+        trunk_toml,
+    }
 }
 
 fn trunk(dir: &Path, args: &[&str]) -> Result<()> {
@@ -259,96 +272,217 @@ const GALLERY_INDEX_HTML: &str = r#"<!DOCTYPE html>
 mod tests {
     use super::*;
 
-    /// Write a minimal fake crate (just a `Cargo.toml`) at `root/rel`.
-    fn fake_crate(root: &Path, rel: &str, name: &str) {
-        let dir = root.join(rel);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("Cargo.toml"),
-            format!("[package]\nname = \"{name}\"\n"),
+    fn config(krate: &str, aggregator: &str) -> GalleryConfig {
+        GalleryConfig {
+            krate: krate.into(),
+            path: format!("crates/{krate}"),
+            aggregator: aggregator.into(),
+            features: vec!["stories".into()],
+        }
+    }
+
+    fn table(src: &str) -> Table {
+        toml::from_str(src).unwrap_or_else(|e| panic!("not TOML ({e}):\n{src}"))
+    }
+
+    fn rendered_foo() -> Harness {
+        render(
+            Path::new("/w/crates/foo"),
+            &config("foo", "foo::all_stories"),
         )
-        .unwrap();
+    }
+
+    fn rendered_theoria() -> Harness {
+        render(
+            Path::new("/w/crates/theoria"),
+            &config("theoria", "theoria::stories"),
+        )
+    }
+
+    fn watched(harness: &Harness) -> Vec<PathBuf> {
+        table(&harness.trunk_toml)["watch"]["watch"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| PathBuf::from(v.as_str().unwrap()))
+            .collect()
     }
 
     #[test]
-    fn generate_writes_a_harness_for_a_normal_crate() {
+    fn harness_declares_no_theoria_or_leptos_of_its_own() {
+        let cargo = table(&rendered_foo().cargo_toml);
+        for name in ["theoria", "leptos"] {
+            assert_eq!(cargo["dependencies"].get(name), None, "{name} in {cargo}");
+        }
+    }
+
+    #[test]
+    fn harness_mounts_the_aggregator_value() {
+        let main = rendered_foo().main_rs;
+        assert!(main.contains("    foo::all_stories().mount();\n"), "{main}");
+    }
+
+    #[test]
+    fn harness_for_theoria_itself_has_one_theoria_with_its_features() {
+        // A second `theoria` key would fail to parse here as a duplicate.
+        let cargo = table(&rendered_theoria().cargo_toml);
+        assert_eq!(
+            cargo["dependencies"]["theoria"]["features"],
+            Value::Array(vec!["stories".into(), "csr".into()])
+        );
+    }
+
+    #[test]
+    fn a_configured_csr_is_not_added_twice() {
+        let mut g = config("foo", "foo::all_stories");
+        g.features = vec!["csr".into()];
+        let cargo = table(&render(Path::new("/w/crates/foo"), &g).cargo_toml);
+        assert_eq!(
+            cargo["dependencies"]["foo"]["features"],
+            Value::Array(vec!["csr".into()])
+        );
+    }
+
+    #[test]
+    fn harness_adds_csr_after_the_stories_crate_features() {
+        let cargo = table(&rendered_foo().cargo_toml);
+        assert_eq!(
+            cargo["dependencies"]["foo"]["features"],
+            Value::Array(vec!["stories".into(), "csr".into()])
+        );
+    }
+
+    #[test]
+    fn harness_depends_on_the_stories_crate_by_its_path() {
+        let cargo = table(&rendered_foo().cargo_toml);
+        let path = cargo["dependencies"]["foo"]["path"].as_str().unwrap();
+        assert_eq!(Path::new(path), Path::new("/w/crates/foo"));
+    }
+
+    #[test]
+    fn harness_is_its_own_workspace() {
+        let cargo = table(&rendered_foo().cargo_toml);
+        assert_eq!(cargo.get("workspace"), Some(&Value::Table(Table::new())));
+    }
+
+    #[test]
+    fn trunk_watches_the_stories_crate_source() {
+        assert_eq!(
+            watched(&rendered_foo()),
+            [PathBuf::from("/w/crates/foo/src")]
+        );
+    }
+
+    #[test]
+    fn a_windows_path_survives_the_generated_toml() {
+        let target = r"C:\Users\me\crates\foo";
+        let harness = render(Path::new(target), &config("foo", "foo::all_stories"));
+        let cargo = table(&harness.cargo_toml);
+        assert_eq!(cargo["dependencies"]["foo"]["path"].as_str(), Some(target));
+    }
+
+    #[test]
+    fn a_windows_path_survives_the_generated_watch_list() {
+        let target = r"C:\Users\me\crates\foo";
+        let harness = render(Path::new(target), &config("foo", "foo::all_stories"));
+        assert_eq!(watched(&harness), [Path::new(target).join("src")]);
+    }
+
+    #[test]
+    fn generate_writes_each_rendered_file_under_its_name() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        fake_crate(root, "crates/foo", "foo");
-        fake_crate(root, "crates/theoria", "theoria");
-        let cfg = GalleryConfig {
-            krate: "foo".into(),
-            path: "crates/foo".into(),
-            aggregator: "foo::all_stories".into(),
-            features: vec!["stories".into()],
-            theoria_path: "crates/theoria".into(),
-        };
+        std::fs::create_dir_all(root.join("crates/foo")).unwrap();
+        std::fs::write(root.join("crates/foo/Cargo.toml"), "").unwrap();
         let dir = root.join("out");
+        let g = config("foo", "foo::all_stories");
 
-        generate(root, &dir, &cfg).unwrap();
+        generate(root, &dir, &g).unwrap();
 
-        let cargo = std::fs::read_to_string(dir.join("Cargo.toml")).unwrap();
-        assert!(
-            cargo.contains("foo = { path"),
-            "depends on the target crate"
-        );
-        assert!(cargo.contains("theoria = { path"), "depends on theoria");
-        // csr is appended to the *target crate's* own feature list (not just the
-        // theoria dep), after the configured features.
-        assert!(
-            cargo.contains(r#""stories", "csr""#),
-            "csr is added to the target crate's features: {cargo}"
-        );
-        assert!(cargo.contains("[workspace]"), "own workspace, not absorbed");
-
-        let main = std::fs::read_to_string(dir.join("src/main.rs")).unwrap();
-        assert!(main.contains("foo::all_stories()"), "mounts the aggregator");
-
-        let trunk = std::fs::read_to_string(dir.join("Trunk.toml")).unwrap();
-        assert!(trunk.contains("crates/foo/src"), "watches the source crate");
-
-        assert!(dir.join("index.html").exists());
+        let harness = render(&root.join("crates/foo"), &g);
+        for (file, expected) in [
+            ("Cargo.toml", harness.cargo_toml),
+            ("src/main.rs", harness.main_rs),
+            ("Trunk.toml", harness.trunk_toml),
+        ] {
+            assert_eq!(
+                std::fs::read_to_string(dir.join(file)).unwrap(),
+                expected,
+                "{file}"
+            );
+        }
     }
 
     #[test]
-    fn generate_emits_a_single_theoria_dep_when_the_crate_is_theoria() {
+    fn generate_rejects_a_crate_that_is_not_a_package_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        for name in ["my.components", "my components", ""] {
+            let err =
+                generate(tmp.path(), &tmp.path().join("out"), &config(name, "x::all")).unwrap_err();
+            assert!(
+                err.to_string().contains(&format!("got `{name}`")),
+                "{name:?}: {err:#}"
+            );
+        }
+    }
+
+    #[test]
+    fn generate_accepts_hyphens_and_underscores_in_the_crate_name() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        fake_crate(root, "crates/theoria", "theoria");
-        let cfg = GalleryConfig {
-            krate: "theoria".into(),
-            path: "crates/theoria".into(),
-            aggregator: "theoria::stories".into(),
-            features: vec!["stories".into()],
-            theoria_path: "crates/theoria".into(),
-        };
-        let dir = root.join("out");
-
-        generate(root, &dir, &cfg).unwrap();
-
-        let cargo = std::fs::read_to_string(dir.join("Cargo.toml")).unwrap();
-        // Exactly one `theoria = { path ... }` key — no duplicate-dependency error.
-        assert_eq!(cargo.matches("theoria = { path").count(), 1);
-        assert!(cargo.contains("\"csr\"") && cargo.contains("\"stories\""));
+        for name in ["my-components", "my_components"] {
+            std::fs::create_dir_all(root.join("crates").join(name)).unwrap();
+            std::fs::write(root.join("crates").join(name).join("Cargo.toml"), "").unwrap();
+            let result = generate(root, &root.join("out"), &config(name, "x::all"));
+            assert!(result.is_ok(), "{name}: {result:?}");
+        }
     }
 
     #[test]
-    fn default_theoria_path_is_the_workspace_crate() {
-        assert_eq!(default_theoria_path(), "crates/theoria");
+    fn generate_writes_the_index_page() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("crates/foo")).unwrap();
+        std::fs::write(root.join("crates/foo/Cargo.toml"), "").unwrap();
+        let dir = root.join("out");
+
+        generate(root, &dir, &config("foo", "foo::all_stories")).unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(dir.join("index.html")).unwrap(),
+            GALLERY_INDEX_HTML
+        );
     }
 
     #[test]
     fn generate_fails_when_the_target_crate_is_missing() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        fake_crate(root, "crates/theoria", "theoria");
-        let cfg = GalleryConfig {
-            krate: "ghost".into(),
-            path: "crates/ghost".into(),
-            aggregator: "ghost::all_stories".into(),
-            features: vec![],
-            theoria_path: "crates/theoria".into(),
-        };
-        assert!(generate(root, &root.join("out"), &cfg).is_err());
+
+        let err = generate(root, &root.join("out"), &config("ghost", "ghost::all")).unwrap_err();
+
+        assert!(err.to_string().contains("ghost"), "{err:#}");
+    }
+
+    const GALLERY: &str =
+        "[gallery]\ncrate = \"foo\"\npath = \"crates/foo\"\naggregator = \"foo::all_stories\"\n";
+
+    #[test]
+    fn an_unknown_gallery_key_is_an_error_naming_it() {
+        let err = toml::from_str::<Config>(&format!("{GALLERY}theoria_path = \"../theoria\"\n"))
+            .err()
+            .expect("theoria_path is rejected");
+
+        // `message()`, not `to_string()`, which echoes the offending line.
+        assert!(err.message().contains("`theoria_path`"), "{err}");
+    }
+
+    #[test]
+    fn an_unknown_table_is_an_error_naming_it() {
+        let err = toml::from_str::<Config>(&format!("{GALLERY}\n[other]\nx = 1\n"))
+            .err()
+            .expect("[other] is rejected");
+
+        assert!(err.message().contains("`other`"), "{err}");
     }
 }

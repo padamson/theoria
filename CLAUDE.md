@@ -53,8 +53,8 @@ Chromium dies at launch (`bootstrap_check_in ... Permission denied`). The
 tests also pass without running when the gallery is missing, so check that
 `target/theoria/gallery/theoria/dist/index.html` exists first.
 
-`serve` rebuilds on any change under the stories crate's `src/` or
-theoria's, since the generated `Trunk.toml` watches both. A change to the
+`serve` rebuilds on any change under the stories crate's `src/`, which the
+generated `Trunk.toml` watches (theoria's own, for `theoria-e2e.toml`). A change to the
 config file needs a re-run, because the harness is generated once at start.
 
 ## Claude Code sandbox

@@ -125,6 +125,68 @@ impl Story {
     }
 }
 
+/// The stories a crate shows in its gallery, as its aggregator returns them.
+///
+/// The app `theoria serve` generates calls [`Stories::gallery`] on the
+/// aggregator's value, so it mounts the `Gallery` of the same theoria the
+/// stories were built with, wherever that theoria comes from.
+///
+/// ```
+/// use theoria::{Stories, Story};
+///
+/// pub fn all_stories() -> Stories {
+///     vec![Story::new("Greeting", || "hello")].into()
+/// }
+/// ```
+#[derive(Default)]
+pub struct Stories(Vec<Story>);
+
+impl Stories {
+    /// The gallery (sidebar, stage, and docs panel) over these stories.
+    pub fn gallery(self) -> impl IntoView {
+        view! { <Gallery stories=self.0 /> }
+    }
+
+    /// Mount the gallery on the page's `<body>`, which is all the app
+    /// `theoria serve` generates does.
+    ///
+    /// It is behind `csr` so that a stories crate whose `csr` feature does
+    /// not enable theoria's fails to build, where it would otherwise run
+    /// without the `localStorage` that keeps the selected story.
+    #[cfg(feature = "csr")]
+    pub fn mount(self) {
+        leptos::mount::mount_to_body(move || self.gallery());
+    }
+}
+
+impl From<Vec<Story>> for Stories {
+    fn from(stories: Vec<Story>) -> Self {
+        Self(stories)
+    }
+}
+
+impl FromIterator<Story> for Stories {
+    fn from_iter<I: IntoIterator<Item = Story>>(stories: I) -> Self {
+        Self(stories.into_iter().collect())
+    }
+}
+
+/// So per-module aggregators combine: `a().into_iter().chain(b()).collect()`.
+impl IntoIterator for Stories {
+    type Item = Story;
+    type IntoIter = std::vec::IntoIter<Story>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl Extend<Story> for Stories {
+    fn extend<I: IntoIterator<Item = Story>>(&mut self, stories: I) {
+        self.0.extend(stories);
+    }
+}
+
 #[cfg(test)]
 mod story_macro_tests {
     use super::*;

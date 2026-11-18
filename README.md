@@ -35,9 +35,20 @@ fn yard(yard_w: f64, yard_d: f64) -> impl IntoView {
 }
 ```
 
-The `/` in a name nests the story in the sidebar. Your crate exposes a
-function returning `Vec<theoria::Story>`, usually behind a `stories`
-feature so production builds leave the stories out.
+The `/` in a name nests the story in the sidebar. Your crate collects its
+stories in a function returning `theoria::Stories`, usually behind a
+`stories` feature so production builds leave them out:
+
+```rust
+#[cfg(feature = "stories")]
+pub fn all_stories() -> theoria::Stories {
+    vec![yard()].into()
+}
+```
+
+The generated app calls `.mount()` on that value, so the gallery comes from
+the same theoria (and the same Leptos) as your stories, whether that is a
+path, git, or crates.io.
 
 ## Serving the gallery
 
@@ -49,7 +60,6 @@ crate = "my-components"            # the package name
 path = "crates/my-components"      # relative to this file
 aggregator = "my_components::all_stories"
 features = ["stories"]
-theoria_path = "../theoria/crates/theoria"
 ```
 
 Then:
@@ -60,9 +70,21 @@ theoria serve          # http://localhost:8081, rebuilt on every source edit
 theoria build          # a static gallery under target/theoria/gallery
 ```
 
-The generated app depends on theoria by path (`theoria_path`, default
-`crates/theoria`), so for now the gallery needs a checkout of this repo
-beside your crate. It also needs the `wasm32-unknown-unknown` target and
+The generated app turns on your crate's `csr` feature, and that feature has
+to pass `csr` on to theoria, the way any Leptos library forwards its runtime:
+
+```toml
+[dependencies]
+theoria = { git = "https://github.com/padamson/theoria", optional = true }
+
+[features]
+stories = ["dep:theoria"]
+csr = ["leptos/csr", "theoria?/csr"]   # "theoria/csr" if theoria is not optional
+```
+
+`mount()` is behind theoria's `csr`, so a crate that leaves this out fails
+the gallery build with ``no method named `mount` ``. The app needs the
+`wasm32-unknown-unknown` target and
 [Trunk](https://trunkrs.dev).
 
 ## Agent skill
