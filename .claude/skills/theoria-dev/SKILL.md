@@ -59,14 +59,15 @@ a gallery from `theoria::stories`). Never put a `Gallery` inside a
   `generate` is tested only for the wiring: each rendered string reaches
   its file in a `TempDir`, and a bad config is refused.
 - **Browser:** theoria-e2e discovers every story from the sidebar at run
-  time, so a new story is covered without editing the test. Its tests
-  return `Ok(())` when the gallery is not built (a known gap; CI checks the
-  build first), so a local run proves nothing until
-  `target/theoria/gallery/theoria/dist/index.html` exists. In a Claude
-  Code session, run it with `cargo nextest run --manifest-path
-  crates/theoria-e2e/Cargo.toml --config-file .config/nextest.toml` as
-  its own Bash call, which the sandbox's `cargo nextest run *` exclusion
-  covers; under `cargo test` the sandbox stops Chromium at launch.
+  time, so a new story is covered without editing the test. Every test
+  runs its body through `with_gallery`, which fails when the gallery is not
+  built and closes the browser on every path, and every test is
+  `#[ignore]`d, since it needs the gallery and Chromium. In a Claude Code
+  session, run it with `cargo nextest run --manifest-path
+  crates/theoria-e2e/Cargo.toml --config-file .config/nextest.toml
+  --run-ignored all` as its own Bash call, which the sandbox's `cargo
+  nextest run *` exclusion covers; under `cargo test` the sandbox stops
+  Chromium at launch.
 
 Mutation testing covers `theoria-cli` and `theoria-macros` only
 (`.cargo/mutants.toml` says why `theoria` is left out). The excluded

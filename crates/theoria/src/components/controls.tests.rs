@@ -31,3 +31,23 @@ fn no_args_renders_nothing() {
     let html = leptotes::render(|| view! { <Controls args=Vec::new() /> });
     assert!(!html.contains("theoria-controls"));
 }
+
+fn number_control(value: f64) -> String {
+    leptotes::render(move || {
+        view! { <Controls args=vec![("width", ArgControl::Num(RwSignal::new(value)))] /> }
+    })
+}
+
+#[test]
+fn a_number_control_starts_at_its_arg() {
+    let html = number_control(12.5);
+    assert!(html.contains(r#"value="12.5""#), "got:\n{html}");
+}
+
+#[test]
+fn a_number_control_for_a_non_finite_arg_starts_empty() {
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        let html = number_control(value);
+        assert!(!html.contains("value="), "arg {value}; got:\n{html}");
+    }
+}

@@ -185,12 +185,6 @@ jobs:
       - name: Build the gallery
         run: cargo run --locked -p theoria-cli -- build --config theoria-e2e.toml
 
-      # The tests pass without running when the gallery is missing (they
-      # print "skipping" and return), so a build that put it anywhere else
-      # would turn this job green with no browser check run.
-      - name: Check the gallery was built
-        run: test -f target/theoria/gallery/theoria/dist/index.html
-
       # No Playwright version here: the example asks playwright-rs for the
       # browser its driver expects, so a bump in the e2e lockfile moves the
       # browser too (crates/theoria-e2e/examples/install-browsers.rs says
@@ -200,5 +194,7 @@ jobs:
 
       # Under nextest so the slow-timeout in .config/nextest.toml applies.
       # The e2e crate is its own workspace root, so the config is named.
+      # Every test is `#[ignore]`d (it needs the gallery and Chromium), hence
+      # `--run-ignored all`; each fails if the gallery is not where it looks.
       - name: Run e2e
-        run: cargo nextest run --locked --manifest-path crates/theoria-e2e/Cargo.toml --config-file .config/nextest.toml --profile ci
+        run: cargo nextest run --locked --manifest-path crates/theoria-e2e/Cargo.toml --config-file .config/nextest.toml --profile ci --run-ignored all

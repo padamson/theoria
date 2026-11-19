@@ -42,16 +42,17 @@ the first line below installs (again after a playwright-rs bump):
 cargo run --manifest-path crates/theoria-e2e/Cargo.toml --example install-browsers
 cargo run -p theoria-cli -- serve --config theoria-e2e.toml  # theoria's own stories on :8081
 cargo run -p theoria-cli -- build --config theoria-e2e.toml  # build the e2e gallery
-cargo nextest run --manifest-path crates/theoria-e2e/Cargo.toml --config-file .config/nextest.toml  # drive it in Chromium
+cargo nextest run --manifest-path crates/theoria-e2e/Cargo.toml --config-file .config/nextest.toml --run-ignored all  # drive it in Chromium
 cargo clippy --manifest-path crates/theoria-e2e/Cargo.toml --all-targets -- -D warnings
 ```
 
 A session runs the e2e tests with the `cargo nextest run` line above, as
 the first command of its own Bash call, which the sandbox's `cargo nextest
 run *` exclusion covers. `cargo test` on the same crate is sandboxed, and
-Chromium dies at launch (`bootstrap_check_in ... Permission denied`). The
-tests also pass without running when the gallery is missing, so check that
-`target/theoria/gallery/theoria/dist/index.html` exists first.
+Chromium dies at launch (`bootstrap_check_in ... Permission denied`). Every
+e2e test is `#[ignore]`d, since it needs the built gallery and Chromium:
+without `--run-ignored all` nextest exits with "no tests to run", and with
+it a test fails, naming the build command, when the gallery is missing.
 
 `serve` rebuilds on any change under the stories crate's `src/`, which the
 generated `Trunk.toml` watches (theoria's own, for `theoria-e2e.toml`). A change to the
@@ -197,9 +198,7 @@ from `leptotes::render`. Components live in `src/components/` as
 `<name>.rs`, with `<name>.stories.rs` (behind the `stories` feature) and
 `<name>.tests.rs` beside it. A test that needs something a fresh clone may
 lack is gated with `#[ignore = "reason; run with ..."]`. Never `return`
-from a test because a precondition is missing. theoria-e2e still does,
-when the gallery is not built, until it is converted; CI checks the
-gallery exists before running it.
+from a test because a precondition is missing.
 
 `.config/nextest.toml` bounds every test with a slow-timeout; the hook
 runs the default profile (no retries) and CI runs `--profile ci` (one

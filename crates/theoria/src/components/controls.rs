@@ -16,6 +16,12 @@ fn type_label(ctl: ArgControl) -> &'static str {
     }
 }
 
+/// A number input's starting `value`: the arg, or none for one that is not
+/// finite, since the input rejects `NaN` and `inf` and would log a warning.
+fn number_value(value: f64) -> Option<String> {
+    value.is_finite().then(|| value.to_string())
+}
+
 #[component]
 pub fn Controls(args: Vec<(&'static str, ArgControl)>) -> impl IntoView {
     (!args.is_empty()).then(move || {
@@ -32,11 +38,14 @@ pub fn Controls(args: Vec<(&'static str, ArgControl)>) -> impl IntoView {
                         />
                     }
                     .into_any(),
+                    // The value is set once, not bound to the arg. Chromium
+                    // reports a typed `1.` as `1`, and writing even that back
+                    // drops the `.` and moves the caret to the start.
                     ArgControl::Num(s) => view! {
                         <input
                             type="number"
                             step="0.5"
-                            prop:value=move || s.get()
+                            value=number_value(s.get_untracked())
                             on:input=move |ev| {
                                 if let Ok(v) = event_target_value(&ev).parse::<f64>() {
                                     s.set(v);

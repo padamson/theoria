@@ -108,7 +108,7 @@ See [CLAUDE.md](CLAUDE.md) for development commands.
 cargo build
 cargo nextest run
 cargo run -p theoria-cli -- build --config theoria-e2e.toml
-cargo test --manifest-path crates/theoria-e2e/Cargo.toml
+cargo nextest run --manifest-path crates/theoria-e2e/Cargo.toml --config-file .config/nextest.toml --run-ignored all
 ```
 
 ## License

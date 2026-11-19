@@ -51,9 +51,6 @@ already ships, so they are fixed when found to matter, not pulled.
   checked out beside a consumer, an edit to theoria rebuilds the gallery
   only on the next save in the stories crate. A `watch` list in
   `theoria.toml` would cover it and any other path dependency.
-- **The number control rewrites what you type** (`Controls`). `prop:value`
-  writes the parsed `f64` back on every keystroke, so `1.` becomes `1` and
-  typing `1.5` gives `15`; `2.0` cannot be typed.
 - **`#[story]` ignores attribute typos** (`story_impl`). An entry that names
   no parameter, or one that is not `key = value`, is dropped without an
   error, and a parameter named `name` can never get a default.
@@ -77,9 +74,6 @@ already ships, so they are fixed when found to matter, not pulled.
 - **No Windows job builds a generated harness.** The CLI's tests parse the
   generated `Cargo.toml` and `Trunk.toml` with a `C:\` path, on every
   platform, but cargo and Trunk never consume one on Windows.
-- **theoria-e2e passes when the gallery is missing.** Each test returns
-  `Ok(())` instead of being `#[ignore]`d with a reason. CI checks the build
-  first, which covers the job but not a local run.
 - **theoria is outside mutation testing.** Its leptotes tests catch 19 of its
   40 mutants. The survivors are in the `*.stories.rs` files and the csr-only
   `localStorage` code, which the native build never compiles, plus two real
