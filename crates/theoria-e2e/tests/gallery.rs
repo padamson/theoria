@@ -68,8 +68,14 @@ async fn with_gallery(body: impl AsyncFnOnce(&Page) -> Result<()>) -> Result<()>
 /// renders non-empty content on the stage. Generic over whatever stories the
 /// gallery was built with.
 async fn assert_every_story_renders(page: &Page) -> Result<()> {
-    let names = page
-        .locator(".theoria > .theoria-nav button")
+    let buttons = page.locator(".theoria > .theoria-nav button");
+    // `all_inner_texts` does not wait, and the page loads before the app
+    // mounts, so wait for the sidebar or the list reads empty.
+    expect(buttons.first())
+        .to_be_visible()
+        .await
+        .context("the sidebar lists a story")?;
+    let names = buttons
         .all_inner_texts()
         .await
         .context("read story names from the sidebar")?;
