@@ -52,6 +52,7 @@ Backlog priority tiers (and Rust/Leptos difficulty + rationale) come from the
 | T6 | **Args + Controls ("knobs")** — live-edit a component's props in the gallery | ✅ done |
 | T16 | **Show code** — render the source the `#[story]` macro captured | ✅ done |
 | T13 | **Autodocs** — per-component page: Markdown description + args table + controls + live story + show-code | ✅ done |
+| T17 | **Typed controls**: args as signals, bounded numbers, color, choice | in progress ([T17](T17-typed-controls.md)) |
 
 **Backlog** (pull when an slp slice needs it)
 

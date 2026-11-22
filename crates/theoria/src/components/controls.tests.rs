@@ -3,15 +3,19 @@
 use leptos::prelude::*;
 
 use super::Controls;
-use crate::ArgControl;
+use crate::{Arg, ArgControl};
 
 #[test]
 fn renders_a_widget_per_arg() {
     let html = leptotes::render(|| {
         let args = vec![
-            ("active", ArgControl::Bool(RwSignal::new(true))),
-            ("width", ArgControl::Num(RwSignal::new(12.0))),
-            ("label", ArgControl::Text(RwSignal::new("hi".to_string()))),
+            Arg::new("active", "bool", ArgControl::Bool(RwSignal::new(true))),
+            Arg::new("width", "Signal<f64>", ArgControl::Num(RwSignal::new(12.0))),
+            Arg::new(
+                "label",
+                "String",
+                ArgControl::Text(RwSignal::new("hi".to_string())),
+            ),
         ];
         view! { <Controls args=args /> }
     });
@@ -20,9 +24,12 @@ fn renders_a_widget_per_arg() {
     assert_eq!(leptotes::count(&html, "<input"), 3, "one widget per arg");
     assert!(html.contains("checkbox"), "bool → checkbox");
     assert!(html.contains("number"), "f64 → number input");
-    // The argTypes table documents each arg's type.
+    // The argTypes table shows each arg's type as the story wrote it.
     assert!(html.contains(">bool<"), "bool type label");
-    assert!(html.contains(">f64<"), "f64 type label");
+    assert!(
+        html.contains(">Signal&lt;f64&gt;<"),
+        "Signal<f64> type label"
+    );
     assert!(html.contains(">String<"), "String type label");
 }
 
@@ -34,7 +41,11 @@ fn no_args_renders_nothing() {
 
 fn number_control(value: f64) -> String {
     leptotes::render(move || {
-        view! { <Controls args=vec![("width", ArgControl::Num(RwSignal::new(value)))] /> }
+        view! {
+            <Controls args=vec![
+                Arg::new("width", "f64", ArgControl::Num(RwSignal::new(value))),
+            ] />
+        }
     })
 }
 

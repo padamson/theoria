@@ -174,6 +174,44 @@ async fn controls_drive_the_stage_live() -> Result<()> {
     .await
 }
 
+/// Leptos patches the stage's elements in place when a body reruns, so only
+/// state the body made tells a rerun from none.
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn an_edit_to_a_signal_arg_keeps_the_story_state() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        page.get_by_text("Knobs · signals", true)
+            .click(None)
+            .await
+            .context("select the signals demo")?;
+        let clicks = page.locator(".theoria-stage .k-clicks");
+        clicks
+            .click(None)
+            .await
+            .context("click the story's own button")?;
+        expect(clicks.clone())
+            .to_have_text("clicked 1")
+            .await
+            .context("the story counts the click")?;
+
+        page.locator(".theoria-panel input[type=checkbox]")
+            .click(None)
+            .await
+            .context("toggle the flag control")?;
+        expect(page.locator(".theoria-stage .k-flag"))
+            .to_have_text("OFF")
+            .await
+            .context("the edit reaches the stage")?;
+        expect(clicks)
+            .to_have_text("clicked 1")
+            .await
+            .context("the story's count survives the edit")?;
+
+        Ok(())
+    })
+    .await
+}
+
 /// A decimal typed key by key into a number control stays as typed and
 /// reaches the story. Each keystroke fires `input`, and Chromium reports a
 /// typed `1.` as `1`, so a control that writes the parsed value back drops the

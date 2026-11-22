@@ -1,20 +1,12 @@
 //! The controls ("knobs") panel, rendered as an argTypes table: a row per story
 //! arg with its name, type, and an editable widget. Editing a widget writes the
-//! arg's signal, which the story's view reads — so the stage re-renders live.
-//! The args come from the `#[story]` macro.
+//! arg's signal. A story that takes the arg as a value runs its body again; one
+//! that takes it as a `Signal` redraws only what reads it. The args come from
+//! the `#[story]` macro.
 
 use leptos::prelude::*;
 
-use crate::ArgControl;
-
-/// The arg's Rust type, for the table's Type column.
-fn type_label(ctl: ArgControl) -> &'static str {
-    match ctl {
-        ArgControl::Bool(_) => "bool",
-        ArgControl::Num(_) => "f64",
-        ArgControl::Text(_) => "String",
-    }
-}
+use crate::{Arg, ArgControl};
 
 /// A number input's starting `value`: the arg, or none for one that is not
 /// finite, since the input rejects `NaN` and `inf` and would log a warning.
@@ -23,13 +15,13 @@ fn number_value(value: f64) -> Option<String> {
 }
 
 #[component]
-pub fn Controls(args: Vec<(&'static str, ArgControl)>) -> impl IntoView {
+pub fn Controls(args: Vec<Arg>) -> impl IntoView {
     (!args.is_empty()).then(move || {
         let rows = args
             .into_iter()
-            .map(|(name, ctl)| {
-                let ty = type_label(ctl);
-                let widget = match ctl {
+            .map(|arg| {
+                let (name, ty) = (arg.name(), arg.ty());
+                let widget = match arg.control() {
                     ArgControl::Bool(s) => view! {
                         <input
                             type="checkbox"

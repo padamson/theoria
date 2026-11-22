@@ -14,22 +14,17 @@
 //! }
 //! ```
 //!
-//! Supported arg types: `bool` (toggle), `f64` (number), `String` (text).
+//! A parameter's type picks its control through `theoria::StoryArg`; the
+//! macro emits the same code for every type.
 
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
-use quote::{format_ident, quote};
+use proc_macro2::{Delimiter, TokenStream as TokenStream2, TokenTree};
+use quote::{format_ident, quote, quote_spanned};
 use std::collections::HashMap;
 use syn::{
     Expr, FnArg, ItemFn, Lit, Meta, Pat, Token, Type, parse::Parser, punctuated::Punctuated,
     spanned::Spanned,
 };
-
-enum Kind {
-    Bool,
-    Num,
-    Text,
-}
 
 #[proc_macro_attribute]
 pub fn story(attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -74,50 +69,19 @@ fn story_impl(attr: TokenStream2, item: TokenStream2) -> TokenStream2 {
     });
     let description = doc_description(&func);
 
-    let mut sig_lets = Vec::new();
-    let mut get_lets = Vec::new();
-    let mut arg_entries = Vec::new();
-    for input in &func.sig.inputs {
-        let FnArg::Typed(pt) = input else {
-            return err(input, "#[story] functions take no self");
-        };
-        let Pat::Ident(pi) = &*pt.pat else {
-            return err(&pt.pat, "#[story] args must be plain identifiers");
-        };
-        let ident = pi.ident.clone();
-        let name = ident.to_string();
-        let sig_ident = format_ident!("__sig_{}", ident);
-        let (variant, default): (proc_macro2::TokenStream, Expr) = match type_kind(&pt.ty) {
-            Some(Kind::Bool) => (
-                quote!(Bool),
-                defaults
-                    .get(&name)
-                    .cloned()
-                    .unwrap_or_else(|| syn::parse_quote!(false)),
-            ),
-            Some(Kind::Num) => (
-                quote!(Num),
-                defaults
-                    .get(&name)
-                    .cloned()
-                    .unwrap_or_else(|| syn::parse_quote!(0.0)),
-            ),
-            Some(Kind::Text) => {
-                let d = defaults
-                    .get(&name)
-                    .cloned()
-                    .unwrap_or_else(|| syn::parse_quote!(""));
-                (
-                    quote!(Text),
-                    syn::parse_quote!(::std::string::String::from(#d)),
-                )
-            }
-            None => return err(&pt.ty, "#[story] arg type must be bool, f64, or String"),
-        };
-        sig_lets.push(quote!(let #sig_ident = leptos::prelude::RwSignal::new(#default);));
-        get_lets.push(quote!(let #ident = #sig_ident.get();));
-        arg_entries.push(quote!((#name, theoria::ArgControl::#variant(#sig_ident))));
-    }
+    let args = match func
+        .sig
+        .inputs
+        .iter()
+        .map(|input| story_arg(input, &defaults))
+        .collect::<syn::Result<Vec<_>>>()
+    {
+        Ok(args) => args,
+        Err(e) => return e.to_compile_error(),
+    };
+    let sig_lets = args.iter().map(|a| &a.sig_let);
+    let get_lets = args.iter().map(|a| &a.get_let);
+    let arg_entries = args.iter().map(|a| &a.entry);
 
     let body = &func.block;
     let source = body_source(&func);
@@ -142,16 +106,100 @@ fn story_impl(attr: TokenStream2, item: TokenStream2) -> TokenStream2 {
     }
 }
 
-fn type_kind(ty: &Type) -> Option<Kind> {
-    if let Type::Path(tp) = ty {
-        match tp.path.segments.last()?.ident.to_string().as_str() {
-            "bool" => return Some(Kind::Bool),
-            "f64" => return Some(Kind::Num),
-            "String" => return Some(Kind::Text),
-            _ => {}
+/// What one story parameter adds to the generated constructor.
+struct ArgTokens {
+    /// Outside the view closure: the arg's signal and its read side.
+    sig_let: TokenStream2,
+    /// Inside it: the parameter.
+    get_let: TokenStream2,
+    /// The `theoria::Arg` for the controls panel.
+    entry: TokenStream2,
+}
+
+fn story_arg(input: &FnArg, defaults: &HashMap<String, Expr>) -> syn::Result<ArgTokens> {
+    let FnArg::Typed(pt) = input else {
+        return Err(syn::Error::new_spanned(
+            input,
+            "#[story] functions take no self",
+        ));
+    };
+    let Pat::Ident(pi) = &*pt.pat else {
+        return Err(syn::Error::new_spanned(
+            &pt.pat,
+            "#[story] args must be plain identifiers",
+        ));
+    };
+    let ident = &pi.ident;
+    let mutability = &pi.mutability;
+    let name = ident.to_string();
+    let sig_ident = format_ident!("__sig_{}", ident);
+    let read_ident = format_ident!("__read_{}", ident);
+    let ty = &pt.ty;
+    let label = type_label(ty);
+    // Every use of the type is spanned on it, so a type with no `StoryArg`
+    // impl is reported at the parameter, not at the attribute.
+    let span = ty.span();
+    let arg = quote_spanned!(span=> <#ty as theoria::StoryArg>);
+    let default = defaults.get(&name).map_or_else(
+        || quote_spanned!(span=> <#arg::Value as ::core::default::Default>::default()),
+        |given| {
+            quote_spanned!(span=>
+                <#arg::Init as ::core::convert::Into<#arg::Value>>::into(#given)
+            )
+        },
+    );
+    Ok(ArgTokens {
+        sig_let: quote_spanned! {span=>
+            let #sig_ident = leptos::prelude::RwSignal::new(#default);
+            let #read_ident: leptos::prelude::Signal<#arg::Value> =
+                leptos::prelude::Signal::from(#sig_ident);
+        },
+        get_let: quote_spanned!(span=> let #mutability #ident: #ty = #arg::bind(#read_ident);),
+        entry: quote_spanned!(span=>
+            theoria::Arg::new(#name, #label, #arg::control(#sig_ident))
+        ),
+    })
+}
+
+/// The type as the story wrote it, for the controls panel's Type column.
+fn type_label(ty: &Type) -> String {
+    join_tokens(quote!(#ty))
+}
+
+fn join_tokens(tokens: TokenStream2) -> String {
+    let mut out = String::new();
+    let mut after_word = false;
+    for token in tokens {
+        match token {
+            TokenTree::Group(group) => {
+                let (open, close) = match group.delimiter() {
+                    Delimiter::Parenthesis => ("(", ")"),
+                    Delimiter::Bracket => ("[", "]"),
+                    Delimiter::Brace => ("{", "}"),
+                    Delimiter::None => ("", ""),
+                };
+                out.push_str(open);
+                out.push_str(&join_tokens(group.stream()));
+                out.push_str(close);
+                after_word = false;
+            }
+            TokenTree::Punct(punct) => {
+                out.push(punct.as_char());
+                if matches!(punct.as_char(), ',' | ';') {
+                    out.push(' ');
+                }
+                after_word = false;
+            }
+            word @ (TokenTree::Ident(_) | TokenTree::Literal(_)) => {
+                if after_word {
+                    out.push(' ');
+                }
+                out.push_str(&word.to_string());
+                after_word = true;
+            }
         }
     }
-    None
+    out
 }
 
 /// The doc-comment lines joined into a `Some("...")` / `None` expression.
@@ -192,10 +240,6 @@ fn body_source(func: &ItemFn) -> Expr {
         .trim()
         .to_string();
     syn::parse_quote!(#s)
-}
-
-fn err(tokens: impl quote::ToTokens, msg: &str) -> TokenStream2 {
-    syn::Error::new(tokens.span(), msg).to_compile_error()
 }
 
 #[cfg(test)]
@@ -239,15 +283,12 @@ mod tests {
             "builds via Story::__from_macro"
         );
         assert!(out.contains("Demo/Widget"), "uses the name override");
-        assert!(
-            out.contains("ArgControl :: Bool"),
-            "bool arg → Bool control"
-        );
-        assert!(out.contains("ArgControl :: Num"), "f64 arg → Num control");
-        assert!(
-            out.contains("ArgControl :: Text"),
-            "String arg → Text control"
-        );
+        for ty in ["bool", "f64", "String"] {
+            assert!(
+                out.contains(&format!("< {ty} as theoria :: StoryArg >")),
+                "the {ty} arg's control comes from its StoryArg impl; got:\n{out}"
+            );
+        }
         assert!(out.contains("Some"), "captures the doc description");
     }
 
@@ -257,19 +298,6 @@ mod tests {
             story_impl(quote!(), quote! { fn yard() -> impl IntoView { view! {} } }).to_string();
         // No `name = "..."`, so the story name is the fn ident as a string literal.
         assert!(out.contains("\"yard\""), "no override → use the fn name");
-    }
-
-    #[test]
-    fn story_impl_rejects_unsupported_arg_types() {
-        let out = story_impl(
-            quote!(),
-            quote! { fn bad(n: i32) -> impl IntoView { view! {} } },
-        )
-        .to_string();
-        assert!(
-            out.contains("compile_error"),
-            "unsupported arg type → compile error"
-        );
     }
 
     #[test]
@@ -305,30 +333,47 @@ mod tests {
     }
 
     #[test]
-    fn type_kind_maps_supported_types() {
-        assert!(matches!(
-            type_kind(&syn::parse_quote!(bool)),
-            Some(Kind::Bool)
-        ));
-        assert!(matches!(
-            type_kind(&syn::parse_quote!(f64)),
-            Some(Kind::Num)
-        ));
-        assert!(matches!(
-            type_kind(&syn::parse_quote!(String)),
-            Some(Kind::Text)
-        ));
-        // Path-qualified forms resolve by the final segment.
-        assert!(matches!(
-            type_kind(&syn::parse_quote!(std::string::String)),
-            Some(Kind::Text)
-        ));
+    fn a_type_label_has_no_spaces_inside_a_generic_type() {
+        assert_eq!(type_label(&syn::parse_quote!(Signal<f64>)), "Signal<f64>");
+        assert_eq!(
+            type_label(&syn::parse_quote!(leptos::prelude::Signal<String>)),
+            "leptos::prelude::Signal<String>"
+        );
     }
 
     #[test]
-    fn type_kind_rejects_unsupported_types() {
-        assert!(type_kind(&syn::parse_quote!(i32)).is_none());
-        assert!(type_kind(&syn::parse_quote!(Signal<bool>)).is_none());
-        assert!(type_kind(&syn::parse_quote!(&str)).is_none());
+    fn a_type_label_keeps_the_space_between_two_words() {
+        assert_eq!(
+            type_label(&syn::parse_quote!(Choice<&'static str>)),
+            "Choice<&'static str>"
+        );
+    }
+
+    #[test]
+    fn a_type_label_puts_a_space_after_a_comma_or_semicolon() {
+        assert_eq!(type_label(&syn::parse_quote!((f64, bool))), "(f64, bool)");
+        assert_eq!(type_label(&syn::parse_quote!([f64; 3])), "[f64; 3]");
+    }
+
+    #[test]
+    fn a_type_label_keeps_each_groups_delimiters() {
+        assert_eq!(type_label(&syn::parse_quote!(Grid<{ N }>)), "Grid<{N}>");
+        let undelimited = proc_macro2::Group::new(Delimiter::None, quote!(f64));
+        assert_eq!(join_tokens(quote!(Signal<#undelimited>)), "Signal<f64>");
+    }
+
+    #[test]
+    fn a_mut_parameter_is_accepted() {
+        let arg = story_arg(&syn::parse_quote!(mut label: String), &HashMap::new());
+        assert!(arg.is_ok(), "got: {:?}", arg.err().map(|e| e.to_string()));
+    }
+
+    #[test]
+    fn a_parameter_that_is_a_pattern_is_rejected() {
+        let arg = story_arg(&syn::parse_quote!((a, b): (bool, bool)), &HashMap::new());
+        assert!(
+            arg.is_err(),
+            "a tuple pattern has no one name for its control"
+        );
     }
 }

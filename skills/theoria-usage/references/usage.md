@@ -5,9 +5,24 @@
   `/` in `name` nests it in the sidebar.
 - `#[story(name = "Group/Name", arg = default, ...)]` on `fn x(arg: T,
   ...) -> impl IntoView`: generates `fn x() -> Story` with one control per
-  parameter. `T` is `bool`, `f64`, or `String`; anything else is a compile
-  error. An arg missing from the attribute starts at `Default::default()`.
-  Without `name`, the story takes the function's name.
+  parameter. `T` is `bool`, `f64`, or `String`, or `Signal<T>` over one of
+  them (the types that implement `theoria::StoryArg`, which is sealed);
+  anything else is a compile error at the parameter, "`i32` cannot be a
+  #[story] arg". A default in the attribute is written as the arg's value
+  (`width = 12.0` for an `f64`, not `12`), or as a `&'static str` for a
+  `String`. An arg missing from the attribute starts at
+  `Default::default()`. Without `name`, the story takes the function's
+  name.
+- A `T` parameter is read inside the generated view closure, so an edit to
+  it runs the whole body again (and resets any signal the body creates). A
+  `Signal<T>` parameter is the arg's signal, the same one on every run,
+  and an edit to it redraws only what reads it. A story whose parameters
+  are all signals runs its body once. Read a signal in a closure (`move ||
+  x.get()`); a `get()` in the body itself makes the stage rerun the body
+  as before.
+- `Story::args()` returns `&[Arg]`: each `Arg` has a `name()`, the
+  parameter's type as written (`ty()`, shown in the panel's Type column,
+  so `Signal<f64>` reads as that), and its `control()`.
 - `theoria.toml`, `[gallery]` table: `crate` (package name), `path` (to
   the crate, relative to the config file), `aggregator` (path of the fn
   returning `Stories`), and `features` (`csr` is added). An unknown key

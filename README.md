@@ -35,6 +35,20 @@ fn yard(yard_w: f64, yard_d: f64) -> impl IntoView {
 }
 ```
 
+A parameter typed `Signal<T>` (over one of those three) gets the arg's
+signal instead of its value, and an edit to it redraws only what reads the
+signal. An edit to a plain parameter runs the whole body again, so a story
+whose parameters are all signals runs its body once, and state it makes for
+itself (an open menu, a count) survives every edit. Read a signal inside a
+closure:
+
+```rust
+#[story(name = "Theme/Swatch", label = "Ink")]
+fn swatch(label: Signal<String>) -> impl IntoView {
+    view! { <Swatch label=move || label.get() /> }
+}
+```
+
 The `/` in a name nests the story in the sidebar. Your crate collects its
 stories in a function returning `theoria::Stories`, usually behind a
 `stories` feature so production builds leave them out:

@@ -25,8 +25,10 @@ test_workspace = true
 # browser suites that no mutant in a logic crate can fail:
 # additional_cargo_test_args = ["-E", "not test(/e2e|slow/)"]
 
-# theoria-cli (gallery generation) and theoria-macros (the `#[story]` type
-# mapping and doc and source extraction), as in slp. theoria is left out
+# theoria-cli (gallery generation) and theoria-macros (the `#[story]`
+# codegen and doc and source extraction), as in slp. A macro mutant that
+# breaks the code theoria's own `#[story]` tests compile is reported
+# unviable, not caught: the workspace build fails before any test runs. theoria is left out
 # for now: its leptotes tests catch about half its mutants, but the rest
 # are in the `*.stories.rs` files and the csr-only localStorage code,
 # which the native test build never compiles, and two are real gaps

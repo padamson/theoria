@@ -26,7 +26,11 @@ gates, and `skills/theoria-usage/` is what a consumer reads.
   `proc_macro2::TokenStream` so tests can call it. It emits
   `Story::__from_macro`, which is `#[doc(hidden)]` and not stable API.
   `theoria/src/lib.rs` has `extern crate self as theoria` so the macro's
-  `theoria::` paths resolve when theoria uses it on itself.
+  `theoria::` paths resolve when theoria uses it on itself. The macro does
+  not read a parameter's type: it emits `<T as theoria::StoryArg>` calls
+  for every one, so a new control is a `StoryArg` impl in `theoria` (its
+  `Value`, its `ArgControl`, and `bind`), not a change to the macro, and an
+  unsupported type is a rustc trait error at the parameter.
 - `crates/theoria-cli`: the `theoria` binary. No Leptos; native only.
 - `crates/theoria-e2e`: outside the workspace, with its own `Cargo.lock`,
   because it pulls playwright-rs and tokio and would slow every workspace

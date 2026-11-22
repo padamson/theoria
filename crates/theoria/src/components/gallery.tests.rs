@@ -3,7 +3,7 @@
 use leptos::prelude::*;
 
 use super::Gallery;
-use crate::{ArgControl, Stories, Story};
+use crate::{Arg, ArgControl, Stories, Story};
 
 fn alpha_beta() -> Vec<Story> {
     vec![
@@ -82,7 +82,11 @@ fn shows_controls_description_and_code_for_a_story_with_args() {
         let stories = vec![Story::__from_macro(
             "Gamma",
             || view! { <p>"gamma-body"</p> }.into_any(),
-            vec![("flag", ArgControl::Bool(RwSignal::new(true)))],
+            vec![Arg::new(
+                "flag",
+                "bool",
+                ArgControl::Bool(RwSignal::new(true)),
+            )],
             "view! { <Gamma /> }",
             Some("A gamma story."),
         )];
