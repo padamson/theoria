@@ -21,9 +21,17 @@ quick and the rest of the stage keeps its state.
         the parameter
   - [x] the panel's Type column shows the parameter's type as written, so
         `Signal<f64>` and `f64` read differently
-- **T17.1 — bounded numbers**
-  - [ ] `theoria::Bounded`, built in the story attribute with a min, max,
-        and step, drawn as a slider beside the number input
+- **T17.1 — bounded numbers** ✅
+  - [x] `theoria::Bounded`, built in the story attribute with a min, max,
+        and step, drawn as a number input with a slider, which wraps under
+        the input when the panel is narrow
+  - [x] moving the slider updates the number box and the story
+  - [x] the story always gets a value within the bounds and on a step: the
+        default and each typed value are clamped and snapped, and the box
+        shows the result once it loses focus
+  - [x] a number box shows the selected story's value after a switch, and
+        rewrites itself only on blur, so Enter part-way through a number
+        keeps what is typed
 - **T17.2 — color**
   - [ ] `theoria::Color`, holding any CSS color as text, drawn as a swatch
         that opens the browser's picker beside a text field; the picker

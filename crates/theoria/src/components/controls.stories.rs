@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 
 use super::Controls;
-use crate::{Arg, ArgControl, Story, story};
+use crate::{Arg, ArgControl, Bounded, Story, story};
 
 /// A **knobs** demo: edit the controls and watch the stage update live.
 ///
@@ -51,10 +51,27 @@ fn knobs_as_signals(on: Signal<bool>, count: Signal<f64>, label: Signal<String>)
     }
 }
 
+/// A **bounded** number: a number box with a slider between `min` and
+/// `max`. Type a value out of range and the story gets the nearest bound;
+/// type one between steps and it gets the nearest step.
+#[story(name = "Knobs · bounded", radius = Bounded::new(0.25).min(0.0).max(1.0).step(0.0625))]
+fn knobs_bounded(radius: Signal<Bounded>) -> impl IntoView {
+    view! {
+        <div
+            class="k-box"
+            style="width: 6rem; height: 3rem; border: 2px solid currentColor"
+            style:border-radius=move || format!("{}rem", radius.get().value())
+        >
+            <p class="k-radius">{move || radius.get().value()}</p>
+        </div>
+    }
+}
+
 pub fn stories() -> Vec<Story> {
     vec![
         knobs(),
         knobs_as_signals(),
+        knobs_bounded(),
         Story::new("Controls · panel", || {
             view! {
                 <Controls args=vec![

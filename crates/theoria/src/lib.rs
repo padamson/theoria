@@ -32,10 +32,144 @@ pub use theoria_macros::story;
 /// A live, editable arg ("knob") backing a control widget. Each variant holds
 /// the reactive signal the control reads/writes and the story's view reads.
 #[derive(Clone, Copy)]
+#[non_exhaustive]
 pub enum ArgControl {
     Bool(RwSignal<bool>),
     Num(RwSignal<f64>),
     Text(RwSignal<String>),
+    Bounded(RwSignal<Bounded>),
+}
+
+/// A number with optional bounds and step, drawn as a number input and,
+/// with both bounds, a slider. The value stays within the bounds and on a
+/// step, counted from the minimum.
+///
+/// ```
+/// use leptos::prelude::*;
+/// use theoria::{Bounded, story};
+///
+/// #[story(radius = Bounded::new(0.25).min(0.0).max(1.0).step(0.0625))]
+/// fn corner(radius: Signal<Bounded>) -> impl IntoView {
+///     view! { <div style:border-radius=move || format!("{}rem", radius.get().value()) /> }
+/// }
+/// ```
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Bounded {
+    value: f64,
+    min: Option<f64>,
+    max: Option<f64>,
+    step: Option<f64>,
+}
+
+impl Bounded {
+    #[must_use]
+    pub fn new(value: f64) -> Self {
+        Self {
+            value,
+            ..Self::default()
+        }
+    }
+
+    /// # Panics
+    ///
+    /// If `min` is not finite, or is above the maximum.
+    #[must_use]
+    pub fn min(self, min: f64) -> Self {
+        Self {
+            min: Some(min),
+            ..self
+        }
+        .checked()
+    }
+
+    /// # Panics
+    ///
+    /// If `max` is not finite, or is below the minimum.
+    #[must_use]
+    pub fn max(self, max: f64) -> Self {
+        Self {
+            max: Some(max),
+            ..self
+        }
+        .checked()
+    }
+
+    fn checked(self) -> Self {
+        if let Some(min) = self.min {
+            assert!(min.is_finite(), "Bounded min {min} is not finite");
+        }
+        if let Some(max) = self.max {
+            assert!(max.is_finite(), "Bounded max {max} is not finite");
+        }
+        if let (Some(min), Some(max)) = (self.min, self.max) {
+            assert!(min <= max, "Bounded min {min} is above its max {max}");
+        }
+        self.with_value(self.value)
+    }
+
+    /// # Panics
+    ///
+    /// If `step` is not a finite number above zero.
+    #[must_use]
+    pub fn step(self, step: f64) -> Self {
+        assert!(
+            step.is_finite() && step > 0.0,
+            "Bounded step {step} is not above zero"
+        );
+        Self {
+            step: Some(step),
+            ..self
+        }
+        .checked()
+    }
+
+    #[must_use]
+    pub fn value(self) -> f64 {
+        self.value
+    }
+
+    fn with_value(self, value: f64) -> Self {
+        Self {
+            value: self.snap(self.clamp(value)),
+            ..self
+        }
+    }
+
+    /// `value` must already be within the bounds.
+    fn snap(self, value: f64) -> f64 {
+        let Some(step) = self.step else {
+            return value;
+        };
+        let base = self.min.unwrap_or(0.0);
+        let mut steps = ((value - base) / step).round();
+        if self.max.is_some_and(|max| base + steps * step > max) {
+            steps -= 1.0;
+        }
+        round_to(base + steps * step, decimals(step).max(decimals(base)))
+    }
+
+    fn clamp(self, value: f64) -> f64 {
+        let value = self.min.map_or(value, |min| value.max(min));
+        self.max.map_or(value, |max| value.min(max))
+    }
+}
+
+/// The digits `value` prints after its decimal point.
+fn decimals(value: f64) -> usize {
+    let text = value.to_string();
+    text.find('.').map_or(0, |point| text.len() - point - 1)
+}
+
+/// `value` to `places` decimals, which takes the float noise off a sum of
+/// decimal steps. Past what an `f64` holds there is nothing to take off.
+fn round_to(value: f64, places: usize) -> f64 {
+    match i32::try_from(places) {
+        Ok(places) if places <= 15 => {
+            let scale = 10f64.powi(places);
+            (value * scale).round() / scale
+        }
+        _ => value,
+    }
 }
 
 /// One editable arg of a story: its name, its type as the story wrote it,
@@ -78,7 +212,7 @@ mod sealed {
     #[diagnostic::on_unimplemented(
         message = "`Signal<{Self}>` cannot be a #[story] arg",
         label = "no control for a signal of this type",
-        note = "a Signal arg holds a bool, f64, or String"
+        note = "a Signal arg holds a bool, f64, String, or Bounded"
     )]
     pub trait Plain:
         super::StoryArg<Value = Self> + Clone + Default + Send + Sync + 'static
@@ -86,8 +220,9 @@ mod sealed {
     }
 }
 
-/// A type a `#[story]` parameter can have: `bool`, `f64`, `String`, or a
-/// `Signal` of one, which hands the body the arg's signal, not its value.
+/// A type a `#[story]` parameter can have: `bool`, `f64`, `String`,
+/// [`Bounded`], or a `Signal` of one, which hands the body the arg's signal,
+/// not its value.
 ///
 /// ```
 /// use leptos::prelude::*;
@@ -115,7 +250,7 @@ mod sealed {
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot be a #[story] arg",
     label = "no control for this type",
-    note = "a #[story] arg is a bool, f64, or String, or a `Signal` of one (not an `RwSignal`)"
+    note = "a #[story] arg is a bool, f64, String, or Bounded, or a `Signal` of one (not an `RwSignal`)"
 )]
 pub trait StoryArg: Sized + sealed::Sealed {
     /// What the arg's control edits.
@@ -154,6 +289,7 @@ macro_rules! value_arg {
 value_arg!(bool, init: bool, control: Bool);
 value_arg!(f64, init: f64, control: Num);
 value_arg!(String, init: &'static str, control: Text);
+value_arg!(Bounded, init: Bounded, control: Bounded);
 
 impl<T: sealed::Plain> sealed::Sealed for Signal<T> {}
 
@@ -483,6 +619,22 @@ mod story_macro_tests {
         });
     }
 
+    #[story(radius = Bounded::new(0.25).min(0.0).max(1.0))]
+    fn bounded_radius(radius: Bounded) -> impl IntoView {
+        view! { <p>{radius.value()}</p> }
+    }
+
+    #[test]
+    fn a_bounded_arg_gets_the_bounded_control_at_its_default() {
+        Owner::new().with(|| {
+            let radius = arg(&bounded_radius(), "radius");
+            let ArgControl::Bounded(signal) = radius.control() else {
+                panic!("`radius: {}` did not get the bounded control", radius.ty());
+            };
+            assert_eq!(signal.get_untracked(), Bounded::new(0.25).min(0.0).max(1.0));
+        });
+    }
+
     #[test]
     fn an_arg_keeps_its_type_as_the_story_wrote_it() {
         Owner::new().with(|| {
@@ -529,5 +681,112 @@ mod story_macro_tests {
             Signal<i32>,
             Signal<Signal<f64>>,
         );
+    }
+}
+
+#[cfg(test)]
+mod bounded_tests {
+    use super::Bounded;
+
+    fn unit() -> Bounded {
+        Bounded::new(0.5).min(0.0).max(1.0)
+    }
+
+    #[test]
+    fn a_value_below_the_minimum_clamps_to_it() {
+        assert_eq!(unit().clamp(-2.0), 0.0);
+    }
+
+    #[test]
+    fn a_value_above_the_maximum_clamps_to_it() {
+        assert_eq!(unit().clamp(7.0), 1.0);
+    }
+
+    #[test]
+    fn a_value_in_bounds_is_kept() {
+        assert_eq!(unit().clamp(0.25), 0.25);
+    }
+
+    #[test]
+    fn without_a_maximum_a_large_value_is_kept() {
+        assert_eq!(Bounded::new(0.0).min(0.0).clamp(1e9), 1e9);
+    }
+
+    #[test]
+    fn without_a_minimum_a_small_value_is_kept() {
+        assert_eq!(Bounded::new(0.0).max(1.0).clamp(-1e9), -1e9);
+    }
+
+    #[test]
+    fn a_starting_value_outside_the_bounds_is_clamped() {
+        assert_eq!(Bounded::new(5.0).min(0.0).max(1.0).value(), 1.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Bounded min 1 is above its max 0")]
+    fn a_minimum_above_the_maximum_panics() {
+        let _ = Bounded::new(0.5).min(1.0).max(0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Bounded max inf is not finite")]
+    fn an_infinite_bound_panics() {
+        let _ = Bounded::new(0.5).max(f64::INFINITY);
+    }
+
+    #[test]
+    #[should_panic(expected = "Bounded min NaN is not finite")]
+    fn a_nan_bound_panics() {
+        let _ = Bounded::new(0.5).min(f64::NAN);
+    }
+
+    #[test]
+    #[should_panic(expected = "Bounded step 0 is not above zero")]
+    fn a_zero_step_panics() {
+        let _ = Bounded::new(0.5).step(0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Bounded step NaN is not above zero")]
+    fn a_nan_step_panics() {
+        let _ = Bounded::new(0.5).step(f64::NAN);
+    }
+
+    fn quarters() -> Bounded {
+        Bounded::new(0.0).min(0.0).max(1.0).step(0.25)
+    }
+
+    #[test]
+    fn a_value_between_steps_snaps_to_the_nearest() {
+        assert_eq!(quarters().with_value(0.3).value(), 0.25);
+    }
+
+    #[test]
+    fn a_starting_value_between_steps_snaps_to_the_nearest() {
+        assert_eq!(Bounded::new(0.3).min(0.0).max(1.0).step(0.25).value(), 0.25);
+    }
+
+    #[test]
+    fn steps_count_from_the_minimum() {
+        let from_a_tenth = Bounded::new(0.1).min(0.1).max(2.0).step(0.25);
+        assert_eq!(from_a_tenth.with_value(0.3).value(), 0.35);
+    }
+
+    // 3 * 0.1 is 0.30000000000000004 in an f64.
+    #[test]
+    fn a_decimal_step_snaps_to_the_decimal_it_names() {
+        let tenths = Bounded::new(0.0).min(0.0).max(1.0).step(0.1);
+        assert_eq!(tenths.with_value(0.34).value(), 0.3);
+    }
+
+    #[test]
+    fn a_maximum_between_steps_snaps_down_to_the_last_step() {
+        let two_fifths = Bounded::new(0.0).min(0.0).max(1.0).step(0.4);
+        assert_eq!(two_fifths.with_value(1.0).value(), 0.8);
+    }
+
+    #[test]
+    fn without_a_step_a_value_between_the_bounds_is_kept() {
+        assert_eq!(unit().with_value(0.3).value(), 0.3);
     }
 }

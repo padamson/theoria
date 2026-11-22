@@ -3,7 +3,7 @@
 use leptos::prelude::*;
 
 use super::Controls;
-use crate::{Arg, ArgControl};
+use crate::{Arg, ArgControl, Bounded};
 
 #[test]
 fn renders_a_widget_per_arg() {
@@ -61,4 +61,62 @@ fn a_number_control_for_a_non_finite_arg_starts_empty() {
         let html = number_control(value);
         assert!(!html.contains("value="), "arg {value}; got:\n{html}");
     }
+}
+
+fn bounded_control(bounded: Bounded) -> String {
+    leptotes::render(move || {
+        view! {
+            <Controls args=vec![
+                Arg::new("radius", "Bounded", ArgControl::Bounded(RwSignal::new(bounded))),
+            ] />
+        }
+    })
+}
+
+fn inputs_of_type(html: &str, ty: &str) -> usize {
+    leptotes::count(html, &format!(r#"type="{ty}""#))
+}
+
+#[test]
+fn a_bounded_control_with_both_bounds_draws_a_slider() {
+    let html = bounded_control(Bounded::new(0.25).min(0.0).max(1.0).step(0.0625));
+    assert_eq!(inputs_of_type(&html, "range"), 1, "got:\n{html}");
+}
+
+#[test]
+fn a_bounded_control_with_both_bounds_draws_a_number_box() {
+    let html = bounded_control(Bounded::new(0.25).min(0.0).max(1.0).step(0.0625));
+    assert_eq!(inputs_of_type(&html, "number"), 1, "got:\n{html}");
+}
+
+#[test]
+fn a_bounded_controls_inputs_both_carry_its_bounds_and_step() {
+    let html = bounded_control(Bounded::new(0.25).min(0.0).max(1.0).step(0.0625));
+    for attr in [r#"min="0""#, r#"max="1""#, r#"step="0.0625""#] {
+        assert_eq!(leptotes::count(&html, attr), 2, "{attr}; got:\n{html}");
+    }
+}
+
+#[test]
+fn a_bounded_control_without_both_bounds_draws_no_slider() {
+    let html = bounded_control(Bounded::new(3.0).min(0.0));
+    assert_eq!(inputs_of_type(&html, "range"), 0, "got:\n{html}");
+}
+
+#[test]
+fn a_bounded_control_without_both_bounds_draws_a_number_box() {
+    let html = bounded_control(Bounded::new(3.0).min(0.0));
+    assert_eq!(inputs_of_type(&html, "number"), 1, "got:\n{html}");
+}
+
+#[test]
+fn a_bounded_control_without_a_step_takes_any_value() {
+    let html = bounded_control(Bounded::new(3.0));
+    assert_eq!(leptotes::count(&html, r#"step="any""#), 1, "got:\n{html}");
+}
+
+#[test]
+fn a_bounded_number_box_starts_at_its_value() {
+    let html = bounded_control(Bounded::new(0.25).min(0.0).max(1.0));
+    assert_eq!(leptotes::count(&html, r#"value="0.25""#), 1, "got:\n{html}");
 }

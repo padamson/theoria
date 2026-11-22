@@ -64,6 +64,13 @@ async fn with_gallery(body: impl AsyncFnOnce(&Page) -> Result<()>) -> Result<()>
     result.and(closed)
 }
 
+async fn select(page: &Page, story: &str) -> Result<()> {
+    page.get_by_text(story, true)
+        .click(None)
+        .await
+        .with_context(|| format!("select the story {story:?}"))
+}
+
 /// Discover every story from the gallery sidebar and assert each one selects and
 /// renders non-empty content on the stage. Generic over whatever stories the
 /// gallery was built with.
@@ -124,10 +131,7 @@ async fn every_story_renders_and_selects() -> Result<()> {
 async fn controls_drive_the_stage_live() -> Result<()> {
     with_gallery(async |page: &Page| {
         // Select the knobs demo (a `#[story]` with args → renders a controls panel).
-        page.get_by_text("Knobs · demo", true)
-            .click(None)
-            .await
-            .context("select the knobs demo")?;
+        select(page, "Knobs · demo").await?;
 
         // Default `on = true` → the stage shows "ON".
         expect(page.locator(".theoria-stage .k-flag"))
@@ -186,10 +190,7 @@ async fn controls_drive_the_stage_live() -> Result<()> {
 #[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
 async fn an_edit_to_a_signal_arg_keeps_the_story_state() -> Result<()> {
     with_gallery(async |page: &Page| {
-        page.get_by_text("Knobs · signals", true)
-            .click(None)
-            .await
-            .context("select the signals demo")?;
+        select(page, "Knobs · signals").await?;
         let clicks = page.locator(".theoria-stage .k-clicks");
         clicks
             .click(None)
@@ -218,6 +219,284 @@ async fn an_edit_to_a_signal_arg_keeps_the_story_state() -> Result<()> {
     .await
 }
 
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn moving_a_bounded_slider_moves_its_number_box() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · bounded").await?;
+        page.locator(".theoria-panel input[type=range]")
+            .fill("0.5", None)
+            .await
+            .context("move the slider to 0.5")?;
+
+        expect(page.locator(".theoria-panel input[type=number]"))
+            .to_have_value("0.5")
+            .await
+            .context("the number box follows the slider")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn moving_a_bounded_slider_reaches_the_story() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · bounded").await?;
+        page.locator(".theoria-panel input[type=range]")
+            .fill("0.5", None)
+            .await
+            .context("move the slider to 0.5")?;
+
+        expect(page.locator(".theoria-stage .k-radius"))
+            .to_have_text("0.5")
+            .await
+            .context("the stage shows the slider's value")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_bounded_number_typed_out_of_range_shows_the_bound_when_it_loses_focus() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · bounded").await?;
+        let number = page.locator(".theoria-panel input[type=number]");
+        number
+            .fill("7", None)
+            .await
+            .context("type 7, above the maximum")?;
+        number.blur().await.context("leave the number box")?;
+
+        expect(number)
+            .to_have_value("1")
+            .await
+            .context("the number box shows the maximum")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_bounded_number_typed_out_of_range_moves_the_slider_to_the_bound() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · bounded").await?;
+        let number = page.locator(".theoria-panel input[type=number]");
+        number
+            .fill("7", None)
+            .await
+            .context("type 7, above the maximum")?;
+
+        expect(page.locator(".theoria-panel input[type=range]"))
+            .to_have_value("1")
+            .await
+            .context("the slider shows the maximum")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_bounded_number_reaches_the_story_clamped_while_it_is_typed() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · bounded").await?;
+        let number = page.locator(".theoria-panel input[type=number]");
+        number
+            .fill("7", None)
+            .await
+            .context("type 7, above the maximum")?;
+
+        expect(page.locator(".theoria-stage .k-radius"))
+            .to_have_text("1")
+            .await
+            .context("the story gets the maximum before the box loses focus")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_bounded_number_keeps_its_text_while_it_is_typed() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · bounded").await?;
+        let number = page.locator(".theoria-panel input[type=number]");
+        number
+            .fill("7", None)
+            .await
+            .context("type 7, above the maximum")?;
+        expect(page.locator(".theoria-stage .k-radius"))
+            .to_have_text("1")
+            .await
+            .context("the story has taken the clamped value")?;
+
+        expect(number)
+            .to_have_value("7")
+            .await
+            .context("the typed text is left alone")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_bounded_number_typed_between_steps_reaches_the_story_on_a_step() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · bounded").await?;
+        let number = page.locator(".theoria-panel input[type=number]");
+        number
+            .fill("0.3", None)
+            .await
+            .context("type 0.3, between steps of 0.0625")?;
+
+        expect(page.locator(".theoria-stage .k-radius"))
+            .to_have_text("0.3125")
+            .await
+            .context("the story gets the nearest step")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn an_emptied_bounded_number_shows_the_value_again_when_it_loses_focus() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · bounded").await?;
+        let number = page.locator(".theoria-panel input[type=number]");
+        number
+            .fill("", None)
+            .await
+            .context("empty the number box")?;
+        number.blur().await.context("leave the number box")?;
+
+        expect(number)
+            .to_have_value("0.25")
+            .await
+            .context("the box shows the arg's value again")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_bounded_slider_is_whole_in_the_panel_and_clear_of_its_number_box() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · bounded").await?;
+        let panel = page
+            .locator(".theoria-panel")
+            .bounding_box()
+            .await?
+            .context("the panel is laid out")?;
+        let number = page
+            .locator(".theoria-panel input[type=number]")
+            .bounding_box()
+            .await?
+            .context("the number box is laid out")?;
+        let slider = page
+            .locator(".theoria-panel input[type=range]")
+            .bounding_box()
+            .await?
+            .context("the slider is laid out")?;
+
+        let inside = slider.x >= panel.x && slider.x + slider.width <= panel.x + panel.width;
+        let beside = slider.x >= number.x + number.width;
+        let below = slider.y >= number.y + number.height;
+        ensure!(
+            inside && (beside || below),
+            "the slider runs out of the panel or overlaps the number box: \
+             panel {panel:?}, number {number:?}, slider {slider:?}"
+        );
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn an_emptied_number_shows_the_value_again_when_it_loses_focus() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · demo").await?;
+        let number = page.locator(".theoria-panel input[type=number]");
+        number
+            .fill("", None)
+            .await
+            .context("empty the count control")?;
+        number.blur().await.context("leave the count control")?;
+
+        expect(number)
+            .to_have_value("2")
+            .await
+            .context("the count control shows the arg's value again")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_number_box_shows_the_next_storys_value() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · demo").await?;
+        let number = page.locator(".theoria-panel input[type=number]");
+        number.fill("5", None).await.context("type 5 into count")?;
+        select(page, "Knobs · signals").await?;
+
+        expect(number)
+            .to_have_value("2")
+            .await
+            .context("the box shows the newly selected story's count")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn pressing_enter_part_way_through_a_number_keeps_what_is_typed() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · demo").await?;
+        let number = page.locator(".theoria-panel input[type=number]");
+        number
+            .clear(None)
+            .await
+            .context("clear the count control")?;
+        number
+            .press_sequentially("1.", None)
+            .await
+            .context("type 1.")?;
+        number.press("Enter", None).await.context("press Enter")?;
+        number
+            .press_sequentially("5", None)
+            .await
+            .context("type 5")?;
+
+        expect(number)
+            .to_have_value("1.5")
+            .await
+            .context("the count control shows what was typed")?;
+
+        Ok(())
+    })
+    .await
+}
+
 /// A decimal typed key by key into a number control stays as typed and
 /// reaches the story. Each keystroke fires `input`, and Chromium reports a
 /// typed `1.` as `1`, so a control that writes the parsed value back drops the
@@ -226,10 +505,7 @@ async fn an_edit_to_a_signal_arg_keeps_the_story_state() -> Result<()> {
 #[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
 async fn a_number_control_keeps_a_decimal_typed_key_by_key() -> Result<()> {
     with_gallery(async |page: &Page| {
-        page.get_by_text("Knobs · demo", true)
-            .click(None)
-            .await
-            .context("select the knobs demo")?;
+        select(page, "Knobs · demo").await?;
         let count = page.locator(".theoria-panel input[type=number]");
         count.clear(None).await.context("clear the count control")?;
         count
