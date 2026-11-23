@@ -35,7 +35,7 @@ fn yard(yard_w: f64, yard_d: f64) -> impl IntoView {
 }
 ```
 
-A parameter typed `Signal<T>` (over one of those three) gets the arg's
+A parameter typed `Signal<T>`, over any type an arg can have, gets the arg's
 signal instead of its value, and an edit to it redraws only what reads the
 signal. An edit to a plain parameter runs the whole body again, so a story
 whose parameters are all signals runs its body once, and state it makes for
@@ -51,7 +51,9 @@ fn swatch(label: Signal<String>) -> impl IntoView {
 
 A `theoria::Bounded` parameter is a number with optional bounds and step,
 set in the attribute (`radius = Bounded::new(0.25).min(0.0).max(1.0)`);
-with both bounds it gets a slider.
+with both bounds it gets a slider. A `theoria::Color` parameter is any CSS
+color as text (`ink = "rgb(36 56 50 / 0.8)"`), with a swatch that shows it
+and opens the browser's picker.
 
 The `/` in a name nests the story in the sidebar. Your crate collects its
 stories in a function returning `theoria::Stories`, usually behind a

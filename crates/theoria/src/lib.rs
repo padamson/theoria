@@ -38,6 +38,41 @@ pub enum ArgControl {
     Num(RwSignal<f64>),
     Text(RwSignal<String>),
     Bounded(RwSignal<Bounded>),
+    Color(RwSignal<Color>),
+}
+
+/// Any CSS color, as text, drawn as a swatch that opens the browser's
+/// picker beside a text field.
+///
+/// ```
+/// use leptos::prelude::*;
+/// use theoria::{Color, story};
+///
+/// #[story(ink = "rgb(36 56 50 / 0.8)")]
+/// fn ink(ink: Signal<Color>) -> impl IntoView {
+///     view! { <p style:color=move || ink.get().to_string()>"Ink"</p> }
+/// }
+/// ```
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Color(String);
+
+impl Color {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl From<&str> for Color {
+    fn from(text: &str) -> Self {
+        Self(text.to_string())
+    }
+}
+
+impl std::fmt::Display for Color {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
 }
 
 /// A number with optional bounds and step, drawn as a number input and,
@@ -212,7 +247,7 @@ mod sealed {
     #[diagnostic::on_unimplemented(
         message = "`Signal<{Self}>` cannot be a #[story] arg",
         label = "no control for a signal of this type",
-        note = "a Signal arg holds a bool, f64, String, or Bounded"
+        note = "a Signal arg holds a bool, f64, String, Bounded, or Color"
     )]
     pub trait Plain:
         super::StoryArg<Value = Self> + Clone + Default + Send + Sync + 'static
@@ -221,8 +256,8 @@ mod sealed {
 }
 
 /// A type a `#[story]` parameter can have: `bool`, `f64`, `String`,
-/// [`Bounded`], or a `Signal` of one, which hands the body the arg's signal,
-/// not its value.
+/// [`Bounded`], [`Color`], or a `Signal` of one, which hands the body the
+/// arg's signal, not its value.
 ///
 /// ```
 /// use leptos::prelude::*;
@@ -250,7 +285,7 @@ mod sealed {
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot be a #[story] arg",
     label = "no control for this type",
-    note = "a #[story] arg is a bool, f64, String, or Bounded, or a `Signal` of one (not an `RwSignal`)"
+    note = "a #[story] arg is a bool, f64, String, Bounded, or Color, or a `Signal` of one (not an `RwSignal`)"
 )]
 pub trait StoryArg: Sized + sealed::Sealed {
     /// What the arg's control edits.
@@ -290,6 +325,7 @@ value_arg!(bool, init: bool, control: Bool);
 value_arg!(f64, init: f64, control: Num);
 value_arg!(String, init: &'static str, control: Text);
 value_arg!(Bounded, init: Bounded, control: Bounded);
+value_arg!(Color, init: &'static str, control: Color);
 
 impl<T: sealed::Plain> sealed::Sealed for Signal<T> {}
 
@@ -622,6 +658,22 @@ mod story_macro_tests {
     #[story(radius = Bounded::new(0.25).min(0.0).max(1.0))]
     fn bounded_radius(radius: Bounded) -> impl IntoView {
         view! { <p>{radius.value()}</p> }
+    }
+
+    #[story(ink = "#243832")]
+    fn ink(ink: Color) -> impl IntoView {
+        view! { <p>{ink.as_str().to_string()}</p> }
+    }
+
+    #[test]
+    fn a_color_arg_gets_the_color_control_at_its_default() {
+        Owner::new().with(|| {
+            let ink = arg(&ink(), "ink");
+            let ArgControl::Color(signal) = ink.control() else {
+                panic!("`ink: {}` did not get the color control", ink.ty());
+            };
+            assert_eq!(signal.get_untracked().as_str(), "#243832");
+        });
     }
 
     #[test]

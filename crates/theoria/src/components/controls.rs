@@ -6,7 +6,7 @@
 
 use leptos::prelude::*;
 
-use crate::{Arg, ArgControl, Bounded};
+use crate::{Arg, ArgControl, Bounded, Color};
 
 /// A number input's starting `value`: the arg, or none for one that is not
 /// finite, since the input rejects `NaN` and `inf` and would log a warning.
@@ -112,6 +112,87 @@ fn bounded_widget(s: RwSignal<Bounded>) -> impl IntoView {
     }
 }
 
+fn text_box(
+    start: String,
+    placeholder: Option<&'static str>,
+    get: impl Fn() -> String + Send + Sync + 'static,
+    set: impl Fn(String) + Send + Sync + 'static,
+) -> impl IntoView {
+    view! {
+        <input
+            type="text"
+            placeholder=placeholder
+            value=start
+            prop:value=get
+            on:input=move |ev| set(event_target_value(&ev))
+        />
+    }
+}
+
+/// The swatch's `style`. The browser drops a color it cannot read, which
+/// leaves the swatch empty. Text with a `;` would style more than the color.
+fn paint(color: &Color) -> Option<String> {
+    let text = color.as_str();
+    (!text.contains(';')).then(|| format!("background-color:{text}"))
+}
+
+/// Where the picker opens, from the swatch's computed `background-color`.
+/// The browser reports a pick only when it differs from the picker's value.
+/// So unless the swatch shows an opaque `rgb(r, g, b)`, which the picker
+/// holds exactly, it opens one step of blue off: picking the color shown,
+/// or black for text that shows none, then still reaches the story.
+pub(super) fn picker_start(computed: &str) -> String {
+    let opaque = computed.starts_with("rgb(");
+    let mut channels = computed
+        .strip_prefix("rgba(")
+        .or_else(|| computed.strip_prefix("rgb("))
+        .unwrap_or_default()
+        .split(',')
+        .map(|channel| channel.trim().trim_end_matches(')').parse::<u8>());
+    let (Some(Ok(r)), Some(Ok(g)), Some(Ok(b))) =
+        (channels.next(), channels.next(), channels.next())
+    else {
+        return "#000001".to_string();
+    };
+    let b = if opaque { b } else { b ^ 1 };
+    format!("#{r:02x}{g:02x}{b:02x}")
+}
+
+fn computed_background(el: &leptos::web_sys::Element) -> Option<String> {
+    let style = window().get_computed_style(el).ok()??;
+    style.get_property_value("background-color").ok()
+}
+
+fn color_widget(s: RwSignal<Color>) -> impl IntoView {
+    let swatch = NodeRef::<leptos::html::Span>::new();
+    let set = move |text: String| s.set(Color(text));
+    view! {
+        <span class="theoria-color">
+            <span class="theoria-swatch">
+                <span node_ref=swatch style=move || s.with(paint)></span>
+                <input
+                    type="color"
+                    on:click=move |ev| {
+                        let shown = swatch
+                            .get_untracked()
+                            .and_then(|swatch| computed_background(&swatch))
+                            .unwrap_or_default();
+                        event_target::<leptos::web_sys::HtmlInputElement>(&ev)
+                            .set_value(&picker_start(&shown));
+                    }
+                    on:input=move |ev| set(event_target_value(&ev))
+                />
+            </span>
+            {text_box(
+                s.with_untracked(|c| c.as_str().to_string()),
+                Some("#rrggbb or any CSS color"),
+                move || s.with(|c| c.as_str().to_string()),
+                set,
+            )}
+        </span>
+    }
+}
+
 #[component]
 pub fn Controls(args: Vec<Arg>) -> impl IntoView {
     (!args.is_empty()).then(move || {
@@ -129,15 +210,15 @@ pub fn Controls(args: Vec<Arg>) -> impl IntoView {
                     }
                     .into_any(),
                     ArgControl::Num(s) => number_widget(s).into_any(),
-                    ArgControl::Text(s) => view! {
-                        <input
-                            type="text"
-                            prop:value=move || s.get()
-                            on:input=move |ev| s.set(event_target_value(&ev))
-                        />
-                    }
+                    ArgControl::Text(s) => text_box(
+                        s.get_untracked(),
+                        None,
+                        move || s.get(),
+                        move |text| s.set(text),
+                    )
                     .into_any(),
                     ArgControl::Bounded(s) => bounded_widget(s).into_any(),
+                    ArgControl::Color(s) => color_widget(s).into_any(),
                 };
                 view! {
                     <tr class="control-row">

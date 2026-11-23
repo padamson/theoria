@@ -5,9 +5,9 @@
   `/` in `name` nests it in the sidebar.
 - `#[story(name = "Group/Name", arg = default, ...)]` on `fn x(arg: T,
   ...) -> impl IntoView`: generates `fn x() -> Story` with one control per
-  parameter. `T` is `bool`, `f64`, `String`, or `Bounded`, or `Signal<T>`
-  over one of them (the types that implement `theoria::StoryArg`, which is
-  sealed);
+  parameter. `T` is `bool`, `f64`, `String`, `Bounded`, or `Color`, or
+  `Signal<T>` over one of them (the types that implement
+  `theoria::StoryArg`, which is sealed);
   anything else is a compile error at the parameter, "`i32` cannot be a
   #[story] arg". A default in the attribute is written as the arg's value
   (`width = 12.0` for an `f64`, not `12`), or as a `&'static str` for a
@@ -21,6 +21,12 @@
   always lies within the bounds and on a step. A `min` above the `max`, a
   bound that is not finite, or a step that is not above zero panics when
   the story is built. The body reads it with `.value()`.
+- `Color` is any CSS color as text, with a `&'static str` default. Its
+  control is a swatch beside a text field. The swatch shows whatever
+  color the text holds, alpha included, and is empty for text that is not
+  a color. It opens the browser's picker, which writes `#rrggbb` into the
+  text and so drops any alpha. The story gets the text as typed. The body
+  reads it with `.as_str()` or `to_string()`.
 - A `T` parameter is read inside the generated view closure, so an edit to
   it runs the whole body again (and resets any signal the body creates). A
   `Signal<T>` parameter is the arg's signal, the same one on every run,

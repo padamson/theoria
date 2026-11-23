@@ -262,6 +262,12 @@ const GALLERY_INDEX_HTML: &str = r#"<!DOCTYPE html>
       .theoria-controls .control-input input[type=range] { flex: 1 1 6em; min-width: 0; padding: 0; border: none; }
       .theoria-bounded { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
       .theoria-bounded input[type=number] { flex: 1 1 4.5em; min-width: 0; }
+      .theoria-color { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+      .theoria-swatch { position: relative; flex: none; width: 2.25em; height: 1.75em; box-sizing: border-box; border: 1px solid #d8d0be; border-radius: 6px; overflow: hidden; background: repeating-conic-gradient(#e3dccb 0 25%, #fff 0 50%) 0 0 / 10px 10px; }
+      .theoria-swatch:focus-within { outline: 2px solid #5c6b4f; outline-offset: 1px; }
+      .theoria-swatch span { position: absolute; inset: 0; }
+      .theoria-controls .control-input .theoria-swatch input { position: absolute; inset: 0; height: 100%; padding: 0; border: none; opacity: 0; cursor: pointer; }
+      .theoria-color input[type=text] { flex: 1 1 9em; min-width: 0; }
       .theoria-code { font-size: 12px; }
       .theoria-code summary { cursor: pointer; color: #5c6b4f; font-weight: 600; }
       .theoria-code pre { margin: 8px 0 0; padding: 12px; background: #2c2a25; color: #f3eee3; border-radius: 10px; overflow: auto; }

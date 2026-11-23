@@ -16,6 +16,7 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result, ensure};
 use axum::Router;
@@ -491,6 +492,212 @@ async fn pressing_enter_part_way_through_a_number_keeps_what_is_typed() -> Resul
             .to_have_value("1.5")
             .await
             .context("the count control shows what was typed")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn picking_a_color_writes_its_hex_into_the_text() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · color").await?;
+        let swatch = page.locator(".theoria-panel input[type=color]");
+        let text = page.locator(".theoria-panel input[type=text]");
+        swatch.fill("#ff8000", None).await.context("pick #ff8000")?;
+
+        expect(text)
+            .to_have_value("#ff8000")
+            .await
+            .context("the text field holds the picked color")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn picking_a_color_reaches_the_story() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · color").await?;
+        let swatch = page.locator(".theoria-panel input[type=color]");
+        swatch.fill("#ff8000", None).await.context("pick #ff8000")?;
+
+        expect(page.locator(".theoria-stage .k-ink"))
+            .to_have_text("#ff8000")
+            .await
+            .context("the story gets the picked color")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_color_typed_as_a_function_reaches_the_story_as_written() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · color").await?;
+        let text = page.locator(".theoria-panel input[type=text]");
+        text.fill("rgb(36 56 50 / 0.8)", None)
+            .await
+            .context("type an rgb() color")?;
+
+        expect(page.locator(".theoria-stage .k-ink"))
+            .to_have_text("rgb(36 56 50 / 0.8)")
+            .await
+            .context("the story gets the color as typed")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_color_typed_into_the_text_paints_the_swatch() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · color").await?;
+        page.locator(".theoria-panel input[type=text]")
+            .fill("rgb(36 56 50 / 0.8)", None)
+            .await
+            .context("type an rgb() color")?;
+
+        expect(page.locator(".theoria-panel .theoria-swatch span"))
+            .to_have_css("background-color", "rgba(36, 56, 50, 0.8)")
+            .await
+            .context("the swatch shows the typed color")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn text_that_is_not_a_color_empties_the_swatch() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · color").await?;
+        page.locator(".theoria-panel input[type=text]")
+            .fill("notacolor", None)
+            .await
+            .context("type text that is not a color")?;
+
+        expect(page.locator(".theoria-panel .theoria-swatch span"))
+            .to_have_css("background-color", "rgba(0, 0, 0, 0)")
+            .await
+            .context("the swatch shows no color")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn the_picker_opens_at_an_opaque_color() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · color").await?;
+        let swatch = page.locator(".theoria-panel input[type=color]");
+        page.locator(".theoria-panel input[type=text]")
+            .fill("teal", None)
+            .await
+            .context("type teal")?;
+        swatch
+            .dispatch_event("click", None)
+            .await
+            .context("open the picker")?;
+
+        expect(swatch)
+            .to_have_value("#008080")
+            .await
+            .context("the picker starts at teal")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn the_picker_opens_one_step_off_a_color_with_alpha() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · color").await?;
+        let swatch = page.locator(".theoria-panel input[type=color]");
+        page.locator(".theoria-panel input[type=text]")
+            .fill("rgb(36 56 50 / 0.8)", None)
+            .await
+            .context("type an rgb() color with alpha")?;
+        swatch
+            .dispatch_event("click", None)
+            .await
+            .context("open the picker")?;
+
+        expect(swatch)
+            .to_have_value("#243833")
+            .await
+            .context("the picker starts one step of blue off the color")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_color_the_picker_cannot_hold_logs_nothing_to_the_console() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        let logged = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&logged);
+        page.on_console(move |msg| {
+            let log = Arc::clone(&log);
+            async move {
+                log.lock()
+                    .expect("the console log")
+                    .push(msg.text().to_string());
+                Ok(())
+            }
+        })
+        .await
+        .context("listen to the console")?;
+        select(page, "Knobs · color").await?;
+        page.locator(".theoria-panel input[type=text]")
+            .fill("teal", None)
+            .await
+            .context("type teal")?;
+        expect(page.locator(".theoria-stage .k-ink"))
+            .to_have_text("teal")
+            .await
+            .context("the story gets the color")?;
+
+        let logged = logged.lock().expect("the console log").clone();
+        ensure!(logged.is_empty(), "the console logged {logged:?}");
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_color_text_field_shows_the_whole_of_a_hex_color() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · color").await?;
+        let text = page.locator(".theoria-panel input[type=text]");
+        text.fill("#24383280", None)
+            .await
+            .context("type a hex color with alpha")?;
+
+        let (shown, needed): (f64, f64) = text
+            .evaluate("el => [el.clientWidth, el.scrollWidth]", None::<()>)
+            .await
+            .context("measure the text field")?;
+        ensure!(
+            needed <= shown,
+            "the text needs {needed}px and the field shows {shown}px"
+        );
 
         Ok(())
     })

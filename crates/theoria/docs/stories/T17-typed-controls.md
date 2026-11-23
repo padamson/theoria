@@ -32,10 +32,16 @@ quick and the rest of the stage keeps its state.
   - [x] a number box shows the selected story's value after a switch, and
         rewrites itself only on blur, so Enter part-way through a number
         keeps what is typed
-- **T17.2 — color**
-  - [ ] `theoria::Color`, holding any CSS color as text, drawn as a swatch
+- **T17.2 — color** ✅
+  - [x] `theoria::Color`, holding any CSS color as text, drawn as a swatch
         that opens the browser's picker beside a text field; the picker
         writes `#rrggbb`
+  - [x] the swatch shows whatever color the text holds, alpha included,
+        and is empty for text that is not a color; the story gets the text
+        as typed
+  - [x] the picker opens at the color shown, or one step off it when the
+        picker cannot hold it exactly (alpha, a color outside sRGB, text
+        that is not a color), so picking that color still reaches the story
 - **T17.3 — choice**
   - [ ] `theoria::Choice<T>`, a list of labelled values built in the story
         attribute, drawn as a `<select>`; the body gets the selected `T`

@@ -3,7 +3,8 @@
 use leptos::prelude::*;
 
 use super::Controls;
-use crate::{Arg, ArgControl, Bounded};
+use super::controls::picker_start;
+use crate::{Arg, ArgControl, Bounded, Color};
 
 #[test]
 fn renders_a_widget_per_arg() {
@@ -119,4 +120,114 @@ fn a_bounded_control_without_a_step_takes_any_value() {
 fn a_bounded_number_box_starts_at_its_value() {
     let html = bounded_control(Bounded::new(0.25).min(0.0).max(1.0));
     assert_eq!(leptotes::count(&html, r#"value="0.25""#), 1, "got:\n{html}");
+}
+
+fn color_control(color: &str) -> String {
+    let color = Color::from(color);
+    leptotes::render(move || {
+        view! {
+            <Controls args=vec![
+                Arg::new("ink", "Color", ArgControl::Color(RwSignal::new(color.clone()))),
+            ] />
+        }
+    })
+}
+
+#[test]
+fn a_color_control_draws_a_swatch() {
+    let html = color_control("#243832");
+    assert_eq!(inputs_of_type(&html, "color"), 1, "got:\n{html}");
+}
+
+#[test]
+fn a_color_control_draws_a_text_field() {
+    let html = color_control("#243832");
+    assert_eq!(inputs_of_type(&html, "text"), 1, "got:\n{html}");
+}
+
+/// The one `<input>` tag of type `ty` in `html`.
+fn input_tag<'a>(html: &'a str, ty: &str) -> &'a str {
+    let marker = format!(r#"type="{ty}""#);
+    let tags: Vec<&str> = html
+        .split("<input")
+        .skip(1)
+        .map(|rest| &rest[..rest.find('>').unwrap_or(rest.len())])
+        .filter(|tag| tag.contains(&marker))
+        .collect();
+    assert_eq!(tags.len(), 1, "one {ty} input; got:\n{html}");
+    tags[0]
+}
+
+#[test]
+fn a_color_controls_swatch_is_painted_with_the_color_as_written() {
+    let html = color_control("rgb(36 56 50 / 0.8)");
+    assert_eq!(
+        leptotes::count(&html, "background-color:rgb(36 56 50 / 0.8)"),
+        1,
+        "got:\n{html}"
+    );
+}
+
+#[test]
+fn text_that_would_style_more_than_a_color_paints_no_swatch() {
+    let html = color_control("teal; width: 9em");
+    assert_eq!(leptotes::count(&html, "style="), 0, "got:\n{html}");
+}
+
+#[test]
+fn a_color_controls_text_field_says_what_it_takes() {
+    let html = color_control("#243832");
+    let text = input_tag(&html, "text");
+    assert!(
+        text.contains(r##"placeholder="#rrggbb or any CSS color""##),
+        "got: {text}"
+    );
+}
+
+#[test]
+fn the_picker_opens_at_an_opaque_color() {
+    assert_eq!(picker_start("rgb(0, 128, 128)"), "#008080");
+}
+
+#[test]
+fn the_picker_opens_one_step_off_a_color_with_alpha() {
+    assert_eq!(picker_start("rgba(36, 56, 50, 0.8)"), "#243833");
+}
+
+#[test]
+fn the_picker_opens_one_step_off_white_with_alpha_inside_the_range() {
+    assert_eq!(picker_start("rgba(255, 255, 255, 0.5)"), "#fffffe");
+}
+
+#[test]
+fn the_picker_opens_one_step_off_black_for_text_that_shows_no_color() {
+    assert_eq!(picker_start("rgba(0, 0, 0, 0)"), "#000001");
+}
+
+#[test]
+fn the_picker_opens_one_step_off_black_for_a_color_outside_rgb() {
+    assert_eq!(picker_start("oklch(0.5 0.1 200)"), "#000001");
+}
+
+#[test]
+fn a_color_controls_text_starts_at_the_color_as_written() {
+    let html = color_control("rgb(36 56 50 / 0.8)");
+    assert_eq!(
+        leptotes::count(&html, r#"value="rgb(36 56 50 / 0.8)""#),
+        1,
+        "got:\n{html}"
+    );
+}
+
+#[test]
+fn a_text_control_starts_at_its_arg() {
+    let html = leptotes::render(|| {
+        view! {
+            <Controls args=vec![
+                Arg::new("label", "String", ArgControl::Text(RwSignal::new("Patio".to_string()))),
+            ] />
+        }
+    });
+    let text = input_tag(&html, "text");
+    assert!(text.contains(r#"value="Patio""#), "got: {text}");
 }

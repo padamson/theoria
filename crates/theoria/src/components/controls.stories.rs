@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 
 use super::Controls;
-use crate::{Arg, ArgControl, Bounded, Story, story};
+use crate::{Arg, ArgControl, Bounded, Color, Story, story};
 
 /// A **knobs** demo: edit the controls and watch the stage update live.
 ///
@@ -67,11 +67,22 @@ fn knobs_bounded(radius: Signal<Bounded>) -> impl IntoView {
     }
 }
 
+/// A **color**: pick one in the swatch, or type any CSS color into the text,
+/// such as `rgb(36 56 50 / 0.8)`. The swatch shows whichever it holds.
+#[story(name = "Knobs · color", ink = "#243832")]
+fn knobs_color(ink: Signal<Color>) -> impl IntoView {
+    view! {
+        <div style="width: 6rem; height: 3rem" style:background=move || ink.get().to_string()></div>
+        <p class="k-ink">{move || ink.get().to_string()}</p>
+    }
+}
+
 pub fn stories() -> Vec<Story> {
     vec![
         knobs(),
         knobs_as_signals(),
         knobs_bounded(),
+        knobs_color(),
         Story::new("Controls · panel", || {
             view! {
                 <Controls args=vec![
