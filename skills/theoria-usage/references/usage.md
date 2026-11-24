@@ -55,7 +55,8 @@
   `Vec<Story>` or `.collect()` from an iterator of them; it also iterates
   and extends, so per-module aggregators combine. `stories.gallery()` is
   the whole gallery as a view, and `stories.mount()` (behind theoria's
-  `csr`) mounts it on `<body>`, which is all the generated app does.
+  `csr`) mounts it on `<body>` and logs any panic to the browser console,
+  which is all the generated app does.
 - The stories crate's `csr` feature enables theoria's: `"theoria?/csr"`
   when theoria is an optional dependency (the usual `stories =
   ["dep:theoria"]`), `"theoria/csr"` when it is not. Cargo rejects the `?`
@@ -70,8 +71,7 @@
 - Each run copies the `Cargo.lock` of the stories crate's workspace into
   the generated app (its own workspace), so the gallery builds on the
   versions that lockfile records and needs no lockfile copied in by hand.
-  The app adds `console_error_panic_hook`, which cargo resolves on its
-  own when the lockfile does not have it. A lockfile change needs a re-run
+  The app depends on nothing but the stories crate. A lockfile change needs a re-run
   of `serve`. A workspace with no lockfile yet leaves the app's own in
   place. A crate that its workspace neither lists nor excludes is an
   error, since cargo cannot say which lockfile it builds on.

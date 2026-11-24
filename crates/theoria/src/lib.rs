@@ -606,14 +606,15 @@ impl Stories {
         view! { <Gallery stories=self.0 /> }
     }
 
-    /// Mount the gallery on the page's `<body>`, which is all the app
-    /// `theoria serve` generates does.
+    /// Mount the gallery on the page's `<body>` and log any panic to the
+    /// browser console, which is all the app `theoria serve` generates does.
     ///
     /// It is behind `csr` so that a stories crate whose `csr` feature does
     /// not enable theoria's fails to build, where it would otherwise run
     /// without the `localStorage` that keeps the selected story.
     #[cfg(feature = "csr")]
     pub fn mount(self) {
+        console_error_panic_hook::set_once();
         leptos::mount::mount_to_body(move || self.gallery());
     }
 }

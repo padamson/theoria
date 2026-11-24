@@ -193,12 +193,10 @@ fn the_gallery_is_built_from_what_the_workspace_lockfile_records() -> Result<()>
 
     let unrecorded: Vec<Locked> = locked(&gallery)?.difference(&workspace).cloned().collect();
 
-    // `console_error_panic_hook` is the one dependency the app's manifest
-    // adds, at whatever version cargo found.
     let names: Vec<&str> = unrecorded.iter().map(|p| p.name.as_str()).collect();
     assert_eq!(
         names,
-        ["console_error_panic_hook", "theoria-gallery"],
+        ["theoria-gallery"],
         "rebuild the gallery if the workspace's Cargo.lock has moved since; got {unrecorded:?}"
     );
     Ok(())

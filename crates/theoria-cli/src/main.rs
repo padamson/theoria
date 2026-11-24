@@ -188,7 +188,6 @@ fn render(target: &Path, g: &GalleryConfig) -> Harness {
          name = \"theoria-gallery\"\n\
          path = \"src/main.rs\"\n\n\
          [dependencies]\n\
-         console_error_panic_hook = \"0.1\"\n\
          {krate} = {stories_dep}\n\n\
          # Own workspace so it isn't absorbed by the parent repo's workspace.\n\
          [workspace]\n",
@@ -205,7 +204,6 @@ fn render(target: &Path, g: &GalleryConfig) -> Harness {
          // `mount` is on the aggregator's `theoria::Stories`, behind theoria's\n\
          // `csr` feature, which the stories crate's `csr` feature must enable.\n\
          fn main() {{\n    \
-         console_error_panic_hook::set_once();\n    \
          {aggregator}().mount();\n\
          }}\n",
         aggregator = g.aggregator,
@@ -360,12 +358,14 @@ mod tests {
             .collect()
     }
 
+    // Anything else would resolve outside the stories crate's lockfile, and
+    // a theoria or leptos of its own would be a second crate whose types do
+    // not match the stories crate's.
     #[test]
-    fn harness_declares_no_theoria_or_leptos_of_its_own() {
+    fn the_stories_crate_is_the_harness_only_dependency() {
         let cargo = table(&rendered_foo().cargo_toml);
-        for name in ["theoria", "leptos"] {
-            assert_eq!(cargo["dependencies"].get(name), None, "{name} in {cargo}");
-        }
+        let names: Vec<&String> = cargo["dependencies"].as_table().unwrap().keys().collect();
+        assert_eq!(names, ["foo"]);
     }
 
     #[test]

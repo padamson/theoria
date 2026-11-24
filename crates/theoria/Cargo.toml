@@ -19,9 +19,11 @@ pulldown-cmark = { version = "0.13", default-features = false, features = ["html
 # Only for the gallery's localStorage (persist the selected story across reloads);
 # pulled in by the csr feature, so ssr/leptotes builds don't see it.
 web-sys = { version = "0.3", optional = true, features = ["Window", "Storage"] }
+# Set by `Stories::mount`.
+console_error_panic_hook = { version = "0.1", optional = true }
 
 [features]
-csr = ["leptos/csr", "dep:web-sys"]
+csr = ["leptos/csr", "dep:web-sys", "dep:console_error_panic_hook"]
 ssr = ["leptos/ssr"]
 hydrate = ["leptos/hydrate"]
 # Compiles the colocated `*.stories.rs` files (theoria's own components as

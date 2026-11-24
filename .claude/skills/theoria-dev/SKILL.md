@@ -71,7 +71,7 @@ a gallery from `theoria::stories`). Never put a `Gallery` inside a
   is not built and closes the browser on every path. One test opens no
   browser: it reads the `Cargo.lock` cargo left beside the built gallery
   and fails if it has a package the workspace's lockfile does not record,
-  other than the harness and `console_error_panic_hook`.
+  other than the harness itself.
   Every test is `#[ignore]`d, since it needs the gallery. In a Claude Code
   session, run it with `cargo nextest run --manifest-path
   crates/theoria-e2e/Cargo.toml --config-file .config/nextest.toml
@@ -95,8 +95,9 @@ also copies in the `Cargo.lock` the stories crate builds on, on every run:
 manifest, for a crate excluded from the workspace around it), and the
 lockfile is the one beside that manifest. Cargo keeps each package the
 harness shares with that lockfile at its version, drops the rest, and adds
-the harness itself and `console_error_panic_hook`, the one dependency the
-harness declares. A crate its workspace neither lists nor excludes is
+the harness itself. The stories crate is the harness's only dependency
+(`Stories::mount` sets the panic hook), so nothing else is resolved outside
+that lockfile. A crate its workspace neither lists nor excludes is
 refused, and a workspace with no lockfile yet leaves the harness's own
 lockfile as it is. The harness declares no theoria or leptos of its
 own, since either could resolve to a second crate whose types would not
