@@ -25,7 +25,7 @@ fn renders_a_widget_per_arg() {
     assert_eq!(leptotes::count(&html, "<input"), 3, "one widget per arg");
     assert!(html.contains("checkbox"), "bool → checkbox");
     assert!(html.contains("number"), "f64 → number input");
-    // The argTypes table shows each arg's type as the story wrote it.
+    // Each row shows its arg's type as the story wrote it.
     assert!(html.contains(">bool<"), "bool type label");
     assert!(
         html.contains(">Signal&lt;f64&gt;<"),

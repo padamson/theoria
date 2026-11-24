@@ -157,7 +157,7 @@ async fn controls_drive_the_stage_live() -> Result<()> {
             .context("show-code toggle present")?;
 
         // Autodocs: the doc-comment renders as Markdown (bold + a list), and the
-        // argTypes table documents each arg's type.
+        // each control row documents its arg's type.
         let strong = page
             .locator(".theoria-panel .theoria-md strong")
             .count()
@@ -174,10 +174,10 @@ async fn controls_drive_the_stage_live() -> Result<()> {
             .locator(".theoria-panel .theoria-controls .control-type")
             .all_inner_texts()
             .await
-            .context("read argTypes type column")?;
+            .context("read each arg's type")?;
         ensure!(
             types.iter().any(|t| t.trim() == "bool"),
-            "argTypes table documents the bool arg, got {types:?}"
+            "the controls document the bool arg, got {types:?}"
         );
 
         Ok(())
@@ -682,13 +682,13 @@ async fn a_color_the_picker_cannot_hold_logs_nothing_to_the_console() -> Result<
 
 #[tokio::test]
 #[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
-async fn a_color_text_field_shows_the_whole_of_a_hex_color() -> Result<()> {
+async fn a_color_text_field_shows_the_whole_of_a_color_function() -> Result<()> {
     with_gallery(async |page: &Page| {
         select(page, "Knobs · color").await?;
         let text = page.locator(".theoria-panel input[type=text]");
-        text.fill("#24383280", None)
+        text.fill("rgb(36 56 50 / 0.8)", None)
             .await
-            .context("type a hex color with alpha")?;
+            .context("type an rgb() color")?;
 
         let (shown, needed): (f64, f64) = text
             .evaluate("el => [el.clientWidth, el.scrollWidth]", None::<()>)
@@ -697,6 +697,39 @@ async fn a_color_text_field_shows_the_whole_of_a_hex_color() -> Result<()> {
         ensure!(
             needed <= shown,
             "the text needs {needed}px and the field shows {shown}px"
+        );
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_control_sits_under_its_args_name_and_type() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · bounded").await?;
+        let name = page
+            .locator(".theoria-panel .control-name")
+            .bounding_box()
+            .await?
+            .context("the arg's name is laid out")?;
+        let ty = page
+            .locator(".theoria-panel .control-type")
+            .bounding_box()
+            .await?
+            .context("the arg's type is laid out")?;
+        let control = page
+            .locator(".theoria-panel .control-input")
+            .bounding_box()
+            .await?
+            .context("the control is laid out")?;
+
+        let head = (name.y + name.height).max(ty.y + ty.height);
+        ensure!(
+            control.y >= head,
+            "the control is beside its name or type: \
+             name {name:?}, type {ty:?}, control {control:?}"
         );
 
         Ok(())

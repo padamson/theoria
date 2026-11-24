@@ -161,7 +161,7 @@ fn story_arg(input: &FnArg, defaults: &HashMap<String, Expr>) -> syn::Result<Arg
     })
 }
 
-/// The type as the story wrote it, for the controls panel's Type column.
+/// The type as the story wrote it, shown in the controls panel.
 fn type_label(ty: &Type) -> String {
     join_tokens(quote!(#ty))
 }

@@ -128,7 +128,7 @@ proc-macro). Prioritize the *value*, accept explicit authoring.
 - **Globals / theme toolbar** — a reactive theme signal all stories read + a
   toolbar toggle; genuinely useful for a styled UI.
 - **Autodocs (T13)** — a per-component page = a **Markdown-rendered description**
-  (pulldown-cmark) + args/argTypes table (name + type + live control) + the live
+  (pulldown-cmark) + args panel (name + type + live control) + the live
   story + show-code; falls out of the macro + args work. Markdown prose
   (headings/lists/code) **is in scope**; only the MDX *authoring format*
   (arbitrary JSX interleaved in Markdown pages) is out of scope. (Follow-up: a

@@ -35,8 +35,9 @@
   x.get()`); a `get()` in the body itself makes the stage rerun the body
   as before.
 - `Story::args()` returns `&[Arg]`: each `Arg` has a `name()`, the
-  parameter's type as written (`ty()`, shown in the panel's Type column,
-  so `Signal<f64>` reads as that), and its `control()`.
+  parameter's type as written (`ty()`, shown beside the name in the
+  panel, so `Signal<f64>` reads as that), and its `control()`. Each
+  control sits under its arg's name and type, as wide as the panel.
 - `theoria.toml`, `[gallery]` table: `crate` (package name), `path` (to
   the crate, relative to the config file), `aggregator` (path of the fn
   returning `Stories`), and `features` (`csr` is added). An unknown key

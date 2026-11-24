@@ -227,7 +227,7 @@ impl Arg {
         self.name
     }
 
-    /// As the story wrote it (`Signal<f64>`), for the panel's Type column.
+    /// As the story wrote it (`Signal<f64>`), shown beside the arg's name.
     #[must_use]
     pub fn ty(&self) -> &'static str {
         self.ty

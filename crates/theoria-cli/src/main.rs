@@ -242,7 +242,7 @@ const GALLERY_INDEX_HTML: &str = r#"<!DOCTYPE html>
       .theoria-group-label:hover { color: #5c6b4f; }
       .theoria-group-label .caret { font-size: 9px; color: #b3ab9a; }
       .theoria-stage { flex: 1 1 auto; background: #fff; border: 1px solid #e3dccb; border-radius: 12px; padding: 16px; min-height: 200px; overflow: auto; height: 100%; box-sizing: border-box; }
-      /* Right-hand panel: Markdown description, argTypes table, and show-code. */
+      /* Right-hand panel: Markdown description, controls, and show-code. */
       .theoria-panel { flex: 0 0 280px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; height: 100%; box-sizing: border-box; }
       .theoria-md { font-size: 13px; line-height: 1.55; color: #4a463d; }
       .theoria-md > :first-child { margin-top: 0; }
@@ -251,23 +251,23 @@ const GALLERY_INDEX_HTML: &str = r#"<!DOCTYPE html>
       .theoria-md ul, .theoria-md ol { margin: .3em 0; padding-left: 1.2em; }
       .theoria-md code { background: #efe9dc; padding: 1px 4px; border-radius: 4px; font-size: 12px; }
       .theoria-md a { color: #5c6b4f; }
-      .theoria-controls { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e3dccb; border-radius: 10px; overflow: hidden; font-size: 13px; }
-      .theoria-controls th { text-align: left; padding: 5px 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: #8a8275; border-bottom: 1px solid #e3dccb; }
-      .theoria-controls td { padding: 6px 10px; border-top: 1px solid #f0eadd; }
-      .theoria-controls tbody tr:first-child td { border-top: none; }
+      .theoria-controls { background: #fff; border: 1px solid #e3dccb; border-radius: 10px; overflow: hidden; font-size: 13px; }
+      .theoria-controls .control-row { padding: 8px 10px; border-top: 1px solid #f0eadd; }
+      .theoria-controls .control-row:first-child { border-top: none; }
+      .theoria-controls .control-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
       .theoria-controls .control-name { color: #2c2a25; font-weight: 600; white-space: nowrap; }
-      .theoria-controls .control-type code { color: #5c6b4f; font-size: 12px; }
+      .theoria-controls .control-type { min-width: 0; color: #5c6b4f; font-size: 12px; text-align: right; overflow-wrap: anywhere; }
       .theoria-controls .control-input input { width: 100%; box-sizing: border-box; padding: 3px 6px; border: 1px solid #d8d0be; border-radius: 6px; font: inherit; }
       .theoria-controls .control-input input[type=checkbox] { width: auto; }
       .theoria-controls .control-input input[type=range] { flex: 1 1 6em; min-width: 0; padding: 0; border: none; }
       .theoria-bounded { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
       .theoria-bounded input[type=number] { flex: 1 1 4.5em; min-width: 0; }
-      .theoria-color { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+      .theoria-color { display: flex; gap: 8px; align-items: center; }
       .theoria-swatch { position: relative; flex: none; width: 2.25em; height: 1.75em; box-sizing: border-box; border: 1px solid #d8d0be; border-radius: 6px; overflow: hidden; background: repeating-conic-gradient(#e3dccb 0 25%, #fff 0 50%) 0 0 / 10px 10px; }
       .theoria-swatch:focus-within { outline: 2px solid #5c6b4f; outline-offset: 1px; }
       .theoria-swatch span { position: absolute; inset: 0; }
       .theoria-controls .control-input .theoria-swatch input { position: absolute; inset: 0; height: 100%; padding: 0; border: none; opacity: 0; cursor: pointer; }
-      .theoria-color input[type=text] { flex: 1 1 9em; min-width: 0; }
+      .theoria-color input[type=text] { flex: 1; min-width: 0; }
       .theoria-code { font-size: 12px; }
       .theoria-code summary { cursor: pointer; color: #5c6b4f; font-weight: 600; }
       .theoria-code pre { margin: 8px 0 0; padding: 12px; background: #2c2a25; color: #f3eee3; border-radius: 10px; overflow: auto; }

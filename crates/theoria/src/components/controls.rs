@@ -1,5 +1,5 @@
-//! The controls ("knobs") panel, rendered as an argTypes table: a row per story
-//! arg with its name, type, and an editable widget. Editing a widget writes the
+//! The controls ("knobs") panel: a row per story arg, with its name and type
+//! over an editable widget as wide as the panel. Editing a widget writes the
 //! arg's signal. A story that takes the arg as a value runs its body again; one
 //! that takes it as a `Signal` redraws only what reads it. The args come from
 //! the `#[story]` macro.
@@ -221,25 +221,16 @@ pub fn Controls(args: Vec<Arg>) -> impl IntoView {
                     ArgControl::Color(s) => color_widget(s).into_any(),
                 };
                 view! {
-                    <tr class="control-row">
-                        <td class="control-name">{name}</td>
-                        <td class="control-type"><code>{ty}</code></td>
-                        <td class="control-input">{widget}</td>
-                    </tr>
+                    <div class="control-row">
+                        <div class="control-head">
+                            <span class="control-name">{name}</span>
+                            <code class="control-type">{ty}</code>
+                        </div>
+                        <div class="control-input">{widget}</div>
+                    </div>
                 }
             })
             .collect::<Vec<_>>();
-        view! {
-            <table class="theoria-controls">
-                <thead>
-                    <tr>
-                        <th>"Arg"</th>
-                        <th>"Type"</th>
-                        <th>"Control"</th>
-                    </tr>
-                </thead>
-                <tbody>{rows}</tbody>
-            </table>
-        }
+        view! { <div class="theoria-controls">{rows}</div> }
     })
 }

@@ -19,7 +19,7 @@ quick and the rest of the stage keeps its state.
         it made survives every edit
   - [x] an unsupported type, or a `Signal` of one, is a compile error at
         the parameter
-  - [x] the panel's Type column shows the parameter's type as written, so
+  - [x] the panel shows the parameter's type as written, so
         `Signal<f64>` and `f64` read differently
 - **T17.1 — bounded numbers** ✅
   - [x] `theoria::Bounded`, built in the story attribute with a min, max,
@@ -42,6 +42,9 @@ quick and the rest of the stage keeps its state.
   - [x] the picker opens at the color shown, or one step off it when the
         picker cannot hold it exactly (alpha, a color outside sRGB, text
         that is not a color), so picking that color still reaches the story
+  - [x] each control sits under its arg's name and type, as wide as the
+        panel, so a long name or type cannot squeeze it and a color
+        function shows whole
 - **T17.3 — choice**
   - [ ] `theoria::Choice<T>`, a list of labelled values built in the story
         attribute, drawn as a `<select>`; the body gets the selected `T`

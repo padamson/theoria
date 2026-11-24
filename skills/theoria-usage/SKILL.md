@@ -3,7 +3,7 @@ name: theoria-usage
 description: Use when writing or reviewing theoria stories for Leptos components (`theoria::Story`, the `#[story]` attribute, a crate's `stories` feature and aggregator function), when setting up or debugging a `theoria.toml` and the `theoria serve` or `theoria build` gallery, or when deciding whether a check belongs in a story, a leptotes test, or a playwright-rust end-to-end test.
 license: MIT OR Apache-2.0
 metadata:
-  version: "0.1.4"
+  version: "0.1.5"
   internal: true
 ---
 
