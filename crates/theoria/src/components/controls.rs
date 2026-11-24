@@ -29,6 +29,7 @@ fn show(number: NodeRef<leptos::html::Input>, text: &str) {
 /// moves the caret to the start. The `value` attribute alone would not reach
 /// a box that has been typed in, which the panel reuses for the next story.
 fn number_box(
+    name: &'static str,
     number: NodeRef<leptos::html::Input>,
     start: f64,
     (min, max): (Option<f64>, Option<f64>),
@@ -39,6 +40,7 @@ fn number_box(
     view! {
         <input
             type="number"
+            aria-label=name
             node_ref=number
             min=min
             max=max
@@ -55,8 +57,9 @@ fn number_box(
     }
 }
 
-fn number_widget(s: RwSignal<f64>) -> impl IntoView {
+fn number_widget(name: &'static str, s: RwSignal<f64>) -> impl IntoView {
     number_box(
+        name,
         NodeRef::new(),
         s.get_untracked(),
         (None, None),
@@ -66,7 +69,7 @@ fn number_widget(s: RwSignal<f64>) -> impl IntoView {
     )
 }
 
-fn bounded_widget(s: RwSignal<Bounded>) -> impl IntoView {
+fn bounded_widget(name: &'static str, s: RwSignal<Bounded>) -> impl IntoView {
     let start = s.get_untracked();
     let step = start
         .step
@@ -84,6 +87,7 @@ fn bounded_widget(s: RwSignal<Bounded>) -> impl IntoView {
         view! {
             <input
                 type="range"
+                aria-label=name
                 min=min
                 max=max
                 step=step.clone()
@@ -100,6 +104,7 @@ fn bounded_widget(s: RwSignal<Bounded>) -> impl IntoView {
     view! {
         <span class="theoria-bounded">
             {number_box(
+                name,
                 number,
                 start.value,
                 (start.min, start.max),
@@ -113,6 +118,7 @@ fn bounded_widget(s: RwSignal<Bounded>) -> impl IntoView {
 }
 
 fn text_box(
+    name: &'static str,
     start: String,
     placeholder: Option<&'static str>,
     get: impl Fn() -> String + Send + Sync + 'static,
@@ -121,6 +127,7 @@ fn text_box(
     view! {
         <input
             type="text"
+            aria-label=name
             placeholder=placeholder
             value=start
             prop:value=get
@@ -163,7 +170,7 @@ fn computed_background(el: &leptos::web_sys::Element) -> Option<String> {
     style.get_property_value("background-color").ok()
 }
 
-fn color_widget(s: RwSignal<Color>) -> impl IntoView {
+fn color_widget(name: &'static str, s: RwSignal<Color>) -> impl IntoView {
     let swatch = NodeRef::<leptos::html::Span>::new();
     let set = move |text: String| s.set(Color(text));
     view! {
@@ -172,6 +179,7 @@ fn color_widget(s: RwSignal<Color>) -> impl IntoView {
                 <span node_ref=swatch style=move || s.with(paint)></span>
                 <input
                     type="color"
+                    aria-label=name
                     on:click=move |ev| {
                         let shown = swatch
                             .get_untracked()
@@ -184,6 +192,7 @@ fn color_widget(s: RwSignal<Color>) -> impl IntoView {
                 />
             </span>
             {text_box(
+                name,
                 s.with_untracked(|c| c.as_str().to_string()),
                 Some("#rrggbb or any CSS color"),
                 move || s.with(|c| c.as_str().to_string()),
@@ -193,7 +202,7 @@ fn color_widget(s: RwSignal<Color>) -> impl IntoView {
     }
 }
 
-fn choice_widget(choice: ChoiceControl) -> impl IntoView {
+fn choice_widget(name: &'static str, choice: ChoiceControl) -> impl IntoView {
     let start = choice.selected.get_untracked();
     let options = choice
         .labels()
@@ -212,7 +221,7 @@ fn choice_widget(choice: ChoiceControl) -> impl IntoView {
         })
         .collect::<Vec<_>>();
     view! {
-        <select on:change=move |ev| {
+        <select aria-label=name on:change=move |ev| {
             if let Some(index) = parse(&ev) {
                 choice.select(index);
             }
@@ -231,22 +240,24 @@ pub fn Controls(args: Vec<Arg>) -> impl IntoView {
                     ArgControl::Bool(s) => view! {
                         <input
                             type="checkbox"
+                            aria-label=name
                             prop:checked=move || s.get()
                             on:change=move |ev| s.set(event_target_checked(&ev))
                         />
                     }
                     .into_any(),
-                    ArgControl::Num(s) => number_widget(s).into_any(),
+                    ArgControl::Num(s) => number_widget(name, s).into_any(),
                     ArgControl::Text(s) => text_box(
+                        name,
                         s.get_untracked(),
                         None,
                         move || s.get(),
                         move |text| s.set(text),
                     )
                     .into_any(),
-                    ArgControl::Bounded(s) => bounded_widget(s).into_any(),
-                    ArgControl::Color(s) => color_widget(s).into_any(),
-                    ArgControl::Choice(choice) => choice_widget(choice).into_any(),
+                    ArgControl::Bounded(s) => bounded_widget(name, s).into_any(),
+                    ArgControl::Color(s) => color_widget(name, s).into_any(),
+                    ArgControl::Choice(choice) => choice_widget(name, choice).into_any(),
                 };
                 view! {
                     <div class="control-row">

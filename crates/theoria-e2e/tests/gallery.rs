@@ -896,6 +896,22 @@ async fn an_arg_type_too_long_for_one_line_wraps_inside_the_controls() -> Result
     .await
 }
 
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_control_is_found_by_its_args_name() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · choice").await?;
+
+        expect(page.get_by_label("build", true))
+            .to_have_value("1")
+            .await
+            .context("the menu labelled build holds the story's selection")?;
+
+        Ok(())
+    })
+    .await
+}
+
 /// A decimal typed key by key into a number control stays as typed and
 /// reaches the story. Each keystroke fires `input`, and Chromium reports a
 /// typed `1.` as `1`, so a control that writes the parsed value back drops the

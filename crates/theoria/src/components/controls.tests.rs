@@ -273,3 +273,55 @@ fn a_choice_control_marks_the_selected_option_alone() {
     let html = choice_control(Choice::new(["dev", "0.13.0", "0.14.0"]).selected("0.13.0"));
     assert_eq!(selected_labels(&html), ["0.13.0"], "got:\n{html}");
 }
+
+fn named(html: &str, name: &str) -> usize {
+    leptotes::count(html, &format!(r#"aria-label="{name}""#))
+}
+
+#[test]
+fn a_checkbox_is_named_for_its_arg() {
+    let html = leptotes::render(|| {
+        view! {
+            <Controls args=vec![
+                Arg::new("active", "bool", ArgControl::Bool(RwSignal::new(true))),
+            ] />
+        }
+    });
+    assert_eq!(named(&html, "active"), 1, "got:\n{html}");
+}
+
+#[test]
+fn a_number_box_is_named_for_its_arg() {
+    let html = number_control(12.5);
+    assert_eq!(named(&html, "width"), 1, "got:\n{html}");
+}
+
+#[test]
+fn a_text_field_is_named_for_its_arg() {
+    let html = leptotes::render(|| {
+        view! {
+            <Controls args=vec![
+                Arg::new("label", "String", ArgControl::Text(RwSignal::new("Patio".to_string()))),
+            ] />
+        }
+    });
+    assert_eq!(named(&html, "label"), 1, "got:\n{html}");
+}
+
+#[test]
+fn a_bounded_controls_number_box_and_slider_are_both_named_for_its_arg() {
+    let html = bounded_control(Bounded::new(0.25).min(0.0).max(1.0));
+    assert_eq!(named(&html, "radius"), 2, "got:\n{html}");
+}
+
+#[test]
+fn a_color_controls_swatch_and_text_field_are_both_named_for_its_arg() {
+    let html = color_control("#243832");
+    assert_eq!(named(&html, "ink"), 2, "got:\n{html}");
+}
+
+#[test]
+fn a_menu_is_named_for_its_arg() {
+    let html = choice_control(Choice::new(["dev", "0.13.0"]));
+    assert_eq!(named(&html, "build"), 1, "got:\n{html}");
+}
