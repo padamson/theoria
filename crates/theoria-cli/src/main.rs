@@ -640,10 +640,12 @@ mod tests {
         )
         .unwrap_err();
 
-        // The workspace's manifest is named only in what cargo printed.
+        // The workspace's manifest is named only in what cargo printed. Each
+        // path is joined a component at a time, so on Windows it has the
+        // separators cargo prints.
         let message = err.to_string();
         for manifest in [
-            root.join("crates/stray/Cargo.toml"),
+            root.join("crates").join("stray").join("Cargo.toml"),
             root.join("Cargo.toml"),
         ] {
             assert!(
