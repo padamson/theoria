@@ -18,9 +18,18 @@ gallery app — the Storybook `dev` experience for theoria.
 - **T9.2 — watch the source crate (true hot reload)**
   - [x] the generated `Trunk.toml` watches the stories crate's `src/`, so editing
     a component or its `*.stories.rs` rebuilds and refreshes the browser
+- **T9.3 — build on the stories crate's lockfile** (pulled by pyle and slp,
+  whose galleries were built on versions no lockfile of theirs recorded)
+  - [x] every run copies the `Cargo.lock` of the stories crate's workspace
+    into the harness, replacing the one the last build left, so cargo keeps
+    each package the two share at that lockfile's version
+  - [x] cargo says which workspace that is, so a crate excluded from the
+    workspace around it gets its own lockfile
+  - [x] a crate its workspace neither lists nor excludes is refused
 
 ## Notes / refs
 
 - Lives in `crates/theoria-cli` (bin `theoria`); native orchestration, no Leptos.
-- In-repo it uses path deps; a published CLI would depend on a crates.io
-  `theoria` version (future, on spin-out).
+- The harness declares no theoria of its own: it calls `mount()` on the
+  aggregator's `Stories`, so it builds with the theoria the stories crate
+  has.

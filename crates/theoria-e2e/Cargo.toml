@@ -17,3 +17,6 @@ tokio = { version = "1", features = ["full"] }
 axum = "0.8"
 tower-http = { version = "0.7", features = ["fs"] }
 anyhow = "1"
+# Read the lockfile cargo leaves beside the built gallery.
+serde = { version = "1", features = ["derive"] }
+toml = "1"

@@ -7,25 +7,57 @@
 //! no compile-time list here. This is theoria dogfooding itself one level — never
 //! a `Gallery` inside a `Gallery`.
 //!
-//! Every test needs the built gallery and Chromium, so each is `#[ignore]`d
-//! and fails, naming the build command, when run without the gallery. Install
-//! the browser once, build the gallery, then run:
+//! Every test needs the built gallery, and all but the lockfile check need
+//! Chromium, so each is `#[ignore]`d and fails, naming the build command, when
+//! run without the gallery. Install the browser once, build the gallery, then
+//! run:
 //!   cargo run --manifest-path crates/theoria-e2e/Cargo.toml --example install-browsers
 //!   cargo run -p theoria-cli -- build --config theoria-e2e.toml
 //!   cargo nextest run --manifest-path crates/theoria-e2e/Cargo.toml --config-file .config/nextest.toml --run-ignored all
 
+use std::collections::BTreeSet;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result, ensure};
 use axum::Router;
 use playwright_rs::expect;
 use playwright_rs::protocol::{Locator, Page, Playwright, SelectOption};
+use serde::Deserialize;
 use tower_http::services::ServeDir;
 
+fn repo_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
+fn gallery_dir() -> PathBuf {
+    repo_root().join("target/theoria/gallery/theoria")
+}
+
 fn dist_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/theoria/gallery/theoria/dist")
+    gallery_dir().join("dist")
+}
+
+/// A package as a lockfile pins it.
+#[derive(Deserialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct Locked {
+    name: String,
+    version: String,
+    source: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct Lockfile {
+    package: Vec<Locked>,
+}
+
+fn locked(lockfile: &Path) -> Result<BTreeSet<Locked>> {
+    let text = std::fs::read_to_string(lockfile)
+        .with_context(|| format!("read {}", lockfile.display()))?;
+    let lock: Lockfile =
+        toml::from_str(&text).with_context(|| format!("parse {}", lockfile.display()))?;
+    Ok(lock.package.into_iter().collect())
 }
 
 async fn serve(dist: &PathBuf) -> Result<(SocketAddr, tokio::task::JoinHandle<()>)> {
@@ -137,6 +169,38 @@ async fn assert_every_story_renders(page: &Page) -> Result<()> {
             "story {name:?} renders non-empty content"
         );
     }
+    Ok(())
+}
+
+/// `generate` puts a copy of the workspace's lockfile beside the app, and the
+/// build has cargo rewrite it to what the app uses, the app itself included.
+/// So the app's entry shows that a build happened, and anything else the
+/// workspace's lockfile lacks was resolved without it.
+///
+/// A build that ignored the workspace's lockfile still passes while that
+/// lockfile is level with the registry, so this fails only once it has
+/// fallen behind. The CLI's own tests pin the copy.
+#[test]
+#[ignore = "needs the built gallery; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+fn the_gallery_is_built_from_what_the_workspace_lockfile_records() -> Result<()> {
+    let gallery = gallery_dir().join("Cargo.lock");
+    ensure!(
+        gallery.exists(),
+        "{} not built; run cargo run -p theoria-cli -- build --config theoria-e2e.toml",
+        gallery.display()
+    );
+    let workspace = locked(&repo_root().join("Cargo.lock"))?;
+
+    let unrecorded: Vec<Locked> = locked(&gallery)?.difference(&workspace).cloned().collect();
+
+    // `console_error_panic_hook` is the one dependency the app's manifest
+    // adds, at whatever version cargo found.
+    let names: Vec<&str> = unrecorded.iter().map(|p| p.name.as_str()).collect();
+    assert_eq!(
+        names,
+        ["console_error_panic_hook", "theoria-gallery"],
+        "rebuild the gallery if the workspace's Cargo.lock has moved since; got {unrecorded:?}"
+    );
     Ok(())
 }
 

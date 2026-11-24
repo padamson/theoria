@@ -39,13 +39,17 @@ Found by the code and test reviews when theoria moved to its own repository,
 and not fixed in the move. Unlike stories, these are wrong behavior in what
 already ships, so they are fixed when found to matter, not pulled.
 
-- **The harness has no lockfile** (`theoria-cli`, `generate`). It is its own
-  workspace, so each `theoria build` resolves leptos and the rest fresh,
-  outside `Cargo.lock`, cargo-deny, and cargo-vet. For the same reason a
-  `[patch]` in the stories crate's workspace does not reach the harness: a
-  crate that patches theoria (or anything else) to a checkout gets the
-  unpatched version in the gallery, or no build if that version is not
-  published.
+- **A `[patch]` does not reach the harness** (`theoria-cli`, `generate`).
+  The harness is its own workspace, so a `[patch]` in the stories crate's
+  workspace is not applied to it: a crate that patches theoria (or anything
+  else) to a checkout gets the unpatched version in the gallery, or no build
+  if that version is not published.
+- **The harness adds a dependency of its own** (`theoria-cli`, `render`).
+  The harness starts from the stories crate's `Cargo.lock` (T9.3), but its
+  manifest asks for `console_error_panic_hook`, which cargo resolves fresh,
+  outside cargo-deny and cargo-vet, when that lockfile does not have it.
+  Setting the hook in `Stories::mount` would leave the harness with the
+  stories crate as its only dependency.
 - **A theoria taken by path is not watched** (`theoria-cli`, `generate`).
   `Trunk.toml` watches only the stories crate's `src/`, so with theoria
   checked out beside a consumer, an edit to theoria rebuilds the gallery

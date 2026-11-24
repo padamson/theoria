@@ -92,6 +92,10 @@ theoria serve          # http://localhost:8081, rebuilt on every source edit
 theoria build          # a static gallery under target/theoria/gallery
 ```
 
+The generated app is its own workspace, so each run copies the `Cargo.lock`
+of your crate's workspace into it, and the gallery builds on the versions
+your crate does. A change to that lockfile needs a re-run of `serve`.
+
 The generated app turns on your crate's `csr` feature, and that feature has
 to pass `csr` on to theoria, the way any Leptos library forwards its runtime:
 

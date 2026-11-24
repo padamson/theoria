@@ -50,13 +50,15 @@ A session runs the e2e tests with the `cargo nextest run` line above, as
 the first command of its own Bash call, which the sandbox's `cargo nextest
 run *` exclusion covers. `cargo test` on the same crate is sandboxed, and
 Chromium dies at launch (`bootstrap_check_in ... Permission denied`). Every
-e2e test is `#[ignore]`d, since it needs the built gallery and Chromium:
+e2e test is `#[ignore]`d, since it needs the built gallery and all but the
+lockfile check need Chromium:
 without `--run-ignored all` nextest exits with "no tests to run", and with
 it a test fails, naming the build command, when the gallery is missing.
 
 `serve` rebuilds on any change under the stories crate's `src/`, which the
 generated `Trunk.toml` watches (theoria's own, for `theoria-e2e.toml`). A change to the
-config file needs a re-run, because the harness is generated once at start.
+config file or to `Cargo.lock` needs a re-run, because the harness is
+generated once at start, with a copy of the lockfile.
 
 ## Claude Code sandbox
 

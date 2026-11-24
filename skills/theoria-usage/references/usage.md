@@ -67,3 +67,11 @@
 - `theoria serve [--port 8081]`, `theoria build`, `theoria generate`, each
   with `--config <file>` (default `theoria.toml`). A config change needs a
   re-run of `serve`.
+- Each run copies the `Cargo.lock` of the stories crate's workspace into
+  the generated app (its own workspace), so the gallery builds on the
+  versions that lockfile records and needs no lockfile copied in by hand.
+  The app adds `console_error_panic_hook`, which cargo resolves on its
+  own when the lockfile does not have it. A lockfile change needs a re-run
+  of `serve`. A workspace with no lockfile yet leaves the app's own in
+  place. A crate that its workspace neither lists nor excludes is an
+  error, since cargo cannot say which lockfile it builds on.

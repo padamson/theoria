@@ -61,12 +61,18 @@ a gallery from `theoria::stories`). Never put a `Gallery` inside a
 - **CLI:** `render` returns the harness's `Cargo.toml`, `src/main.rs`, and
   `Trunk.toml` as strings, and the tests parse the TOML and compare values.
   `generate` is tested only for the wiring: each rendered string reaches
-  its file in a `TempDir`, and a bad config is refused.
+  its file in a `TempDir`, a bad config is refused, and the right
+  `Cargo.lock` is copied in. Its fixtures are workspaces cargo can load
+  (`write_workspace`), since `generate` runs `cargo locate-project`, which
+  would otherwise look for a workspace above the temp directory.
 - **Browser:** theoria-e2e discovers every story from the sidebar at run
-  time, so a new story is covered without editing the test. Every test
-  runs its body through `with_gallery`, which fails when the gallery is not
-  built and closes the browser on every path, and every test is
-  `#[ignore]`d, since it needs the gallery and Chromium. In a Claude Code
+  time, so a new story is covered without editing the test. Every browser
+  test runs its body through `with_gallery`, which fails when the gallery
+  is not built and closes the browser on every path. One test opens no
+  browser: it reads the `Cargo.lock` cargo left beside the built gallery
+  and fails if it has a package the workspace's lockfile does not record,
+  other than the harness and `console_error_panic_hook`.
+  Every test is `#[ignore]`d, since it needs the gallery. In a Claude Code
   session, run it with `cargo nextest run --manifest-path
   crates/theoria-e2e/Cargo.toml --config-file .config/nextest.toml
   --run-ignored all` as its own Bash call, which the sandbox's `cargo
@@ -83,7 +89,16 @@ end.
 `generate` writes `Cargo.toml`, `src/main.rs`, `index.html`, and
 `Trunk.toml` under `target/theoria/gallery/<crate>/`, one directory per
 gallery so two configs do not clobber each other. `csr` is appended to the
-target crate's features. The harness declares no theoria or leptos of its
+target crate's features. The harness is its own workspace, so `generate`
+also copies in the `Cargo.lock` the stories crate builds on, on every run:
+`cargo locate-project --workspace` names the crate's workspace (its own
+manifest, for a crate excluded from the workspace around it), and the
+lockfile is the one beside that manifest. Cargo keeps each package the
+harness shares with that lockfile at its version, drops the rest, and adds
+the harness itself and `console_error_panic_hook`, the one dependency the
+harness declares. A crate its workspace neither lists nor excludes is
+refused, and a workspace with no lockfile yet leaves the harness's own
+lockfile as it is. The harness declares no theoria or leptos of its
 own, since either could resolve to a second crate whose types would not
 match the stories crate's. Its `main` is `aggregator().mount()`: the
 aggregator returns `theoria::Stories`, and an inherent method needs no path

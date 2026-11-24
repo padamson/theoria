@@ -99,7 +99,8 @@ fn main() -> Result<()> {
 }
 
 /// Write the generated Trunk gallery crate (`Cargo.toml`, `index.html`,
-/// `src/main.rs`, `Trunk.toml`) into `dir`.
+/// `src/main.rs`, `Trunk.toml`) into `dir`, with the stories crate's
+/// `Cargo.lock` beside them.
 fn generate(repo_root: &Path, dir: &Path, g: &GalleryConfig) -> Result<()> {
     // The name becomes a bare key in the harness's `[dependencies]`.
     let is_name_char = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
@@ -114,13 +115,41 @@ fn generate(repo_root: &Path, dir: &Path, g: &GalleryConfig) -> Result<()> {
         bail!("no crate found at {}", target_abs.display());
     }
     let harness = render(&target_abs, g);
+    let lockfile = workspace_lockfile(&target_abs)?;
 
     fs::create_dir_all(dir.join("src")).context("create gallery dir")?;
     fs::write(dir.join("Cargo.toml"), harness.cargo_toml).context("write Cargo.toml")?;
     fs::write(dir.join("src/main.rs"), harness.main_rs).context("write src/main.rs")?;
     fs::write(dir.join("index.html"), GALLERY_INDEX_HTML).context("write index.html")?;
     fs::write(dir.join("Trunk.toml"), harness.trunk_toml).context("write Trunk.toml")?;
+    if let Some(lockfile) = lockfile {
+        fs::copy(&lockfile, dir.join("Cargo.lock"))
+            .with_context(|| format!("copy {}", lockfile.display()))?;
+    }
     Ok(())
+}
+
+/// The `Cargo.lock` the crate at `target` builds on: its workspace's, and
+/// cargo says which workspace that is.
+fn workspace_lockfile(target: &Path) -> Result<Option<PathBuf>> {
+    let manifest = target.join("Cargo.toml");
+    let output = Command::new("cargo")
+        .args(["locate-project", "--workspace", "--message-format", "plain"])
+        .arg("--manifest-path")
+        .arg(&manifest)
+        .output()
+        .context("failed to run `cargo locate-project`")?;
+    if !output.status.success() {
+        bail!(
+            "cargo cannot tell which workspace {} is in:\n{}",
+            manifest.display(),
+            String::from_utf8_lossy(&output.stderr).trim_end()
+        );
+    }
+    let workspace_manifest =
+        String::from_utf8(output.stdout).context("the workspace's path is not UTF-8")?;
+    let lockfile = Path::new(workspace_manifest.trim_end()).with_file_name("Cargo.lock");
+    Ok(lockfile.exists().then_some(lockfile))
 }
 
 /// The generated files that vary with the config.
@@ -291,6 +320,19 @@ mod tests {
         }
     }
 
+    /// A crate cargo can load: `generate` asks cargo which workspace it is in.
+    fn write_crate(dir: &Path, name: &str) {
+        fs::create_dir_all(dir).unwrap();
+        fs::write(
+            dir.join("Cargo.toml"),
+            format!(
+                "[package]\nname = \"{name}\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n\
+                 [lib]\npath = \"lib.rs\"\n"
+            ),
+        )
+        .unwrap();
+    }
+
     fn table(src: &str) -> Table {
         toml::from_str(src).unwrap_or_else(|e| panic!("not TOML ({e}):\n{src}"))
     }
@@ -402,8 +444,7 @@ mod tests {
     fn generate_writes_each_rendered_file_under_its_name() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        std::fs::create_dir_all(root.join("crates/foo")).unwrap();
-        std::fs::write(root.join("crates/foo/Cargo.toml"), "").unwrap();
+        write_workspace(root, &["foo"], &[]);
         let dir = root.join("out");
         let g = config("foo", "foo::all_stories");
 
@@ -440,9 +481,8 @@ mod tests {
     fn generate_accepts_hyphens_and_underscores_in_the_crate_name() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
+        write_workspace(root, &["my-components", "my_components"], &[]);
         for name in ["my-components", "my_components"] {
-            std::fs::create_dir_all(root.join("crates").join(name)).unwrap();
-            std::fs::write(root.join("crates").join(name).join("Cargo.toml"), "").unwrap();
             let result = generate(root, &root.join("out"), &config(name, "x::all"));
             assert!(result.is_ok(), "{name}: {result:?}");
         }
@@ -452,8 +492,7 @@ mod tests {
     fn generate_writes_the_index_page() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
-        std::fs::create_dir_all(root.join("crates/foo")).unwrap();
-        std::fs::write(root.join("crates/foo/Cargo.toml"), "").unwrap();
+        write_workspace(root, &["foo"], &[]);
         let dir = root.join("out");
 
         generate(root, &dir, &config("foo", "foo::all_stories")).unwrap();
@@ -462,6 +501,170 @@ mod tests {
             std::fs::read_to_string(dir.join("index.html")).unwrap(),
             GALLERY_INDEX_HTML
         );
+    }
+
+    /// A workspace at `root` whose members are the crates named, each under
+    /// `crates/`, and which leaves out the ones in `exclude`. A fixture with
+    /// no workspace above it would take cargo up through the temp directory's
+    /// parents, looking for one.
+    fn write_workspace(root: &Path, members: &[&str], exclude: &[&str]) {
+        let under_crates = |names: &[&str]| -> Vec<String> {
+            names.iter().map(|n| format!("crates/{n}")).collect()
+        };
+        fs::write(
+            root.join("Cargo.toml"),
+            format!(
+                "[workspace]\nmembers = {:?}\nexclude = {:?}\nresolver = \"3\"\n",
+                under_crates(members),
+                under_crates(exclude),
+            ),
+        )
+        .unwrap();
+        for name in members {
+            write_crate(&root.join("crates").join(name), name);
+        }
+    }
+
+    const WORKSPACE_LOCK: &str = "# the workspace's\n";
+
+    fn harness_lockfile(dir: &Path) -> Option<String> {
+        fs::read_to_string(dir.join("Cargo.lock")).ok()
+    }
+
+    #[test]
+    fn generate_copies_the_workspace_lockfile_into_the_harness() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write_workspace(root, &["foo"], &[]);
+        fs::write(root.join("Cargo.lock"), WORKSPACE_LOCK).unwrap();
+        let dir = root.join("out");
+
+        generate(root, &dir, &config("foo", "foo::all_stories")).unwrap();
+
+        assert_eq!(harness_lockfile(&dir).as_deref(), Some(WORKSPACE_LOCK));
+    }
+
+    #[test]
+    fn generate_replaces_the_lockfile_an_earlier_build_left() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write_workspace(root, &["foo"], &[]);
+        fs::write(root.join("Cargo.lock"), WORKSPACE_LOCK).unwrap();
+        let dir = root.join("out");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("Cargo.lock"), "# an earlier build's\n").unwrap();
+
+        generate(root, &dir, &config("foo", "foo::all_stories")).unwrap();
+
+        assert_eq!(harness_lockfile(&dir).as_deref(), Some(WORKSPACE_LOCK));
+    }
+
+    #[test]
+    fn a_lockfile_beside_a_workspace_member_is_not_the_one_copied() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write_workspace(root, &["foo"], &[]);
+        fs::write(root.join("Cargo.lock"), WORKSPACE_LOCK).unwrap();
+        fs::write(
+            root.join("crates/foo/Cargo.lock"),
+            "# cargo never reads this\n",
+        )
+        .unwrap();
+        let dir = root.join("out");
+
+        generate(root, &dir, &config("foo", "foo::all_stories")).unwrap();
+
+        assert_eq!(harness_lockfile(&dir).as_deref(), Some(WORKSPACE_LOCK));
+    }
+
+    #[test]
+    fn a_crate_excluded_from_the_workspace_gives_the_harness_the_crates_own_lockfile() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write_workspace(root, &["foo"], &["apart"]);
+        fs::write(root.join("Cargo.lock"), WORKSPACE_LOCK).unwrap();
+        write_crate(&root.join("crates/apart"), "apart");
+        fs::write(root.join("crates/apart/Cargo.lock"), "# the crate's own\n").unwrap();
+        let dir = root.join("out");
+
+        generate(root, &dir, &config("apart", "apart::all_stories")).unwrap();
+
+        assert_eq!(
+            harness_lockfile(&dir).as_deref(),
+            Some("# the crate's own\n")
+        );
+    }
+
+    #[test]
+    fn generate_writes_no_lockfile_when_the_workspace_has_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write_workspace(root, &["foo"], &[]);
+        let dir = root.join("out");
+
+        generate(root, &dir, &config("foo", "foo::all_stories")).unwrap();
+
+        assert_eq!(harness_lockfile(&dir), None);
+    }
+
+    // Removing it instead would have a workspace that has never been built
+    // on its own resolve the whole gallery again on every run.
+    #[test]
+    fn generate_keeps_the_harness_lockfile_when_the_workspace_has_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write_workspace(root, &["foo"], &[]);
+        let dir = root.join("out");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("Cargo.lock"), "# an earlier build's\n").unwrap();
+
+        generate(root, &dir, &config("foo", "foo::all_stories")).unwrap();
+
+        assert_eq!(
+            harness_lockfile(&dir).as_deref(),
+            Some("# an earlier build's\n")
+        );
+    }
+
+    #[test]
+    fn generate_fails_for_a_crate_its_workspace_does_not_list() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write_workspace(root, &["foo"], &[]);
+        write_crate(&root.join("crates/stray"), "stray");
+
+        let err = generate(
+            root,
+            &root.join("out"),
+            &config("stray", "stray::all_stories"),
+        )
+        .unwrap_err();
+
+        // The workspace's manifest is named only in what cargo printed.
+        let message = err.to_string();
+        for manifest in [
+            root.join("crates/stray/Cargo.toml"),
+            root.join("Cargo.toml"),
+        ] {
+            assert!(
+                message.contains(&manifest.display().to_string()),
+                "no {} in: {message}",
+                manifest.display()
+            );
+        }
+    }
+
+    #[test]
+    fn generate_writes_nothing_for_a_crate_its_workspace_does_not_list() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        write_workspace(root, &["foo"], &[]);
+        write_crate(&root.join("crates/stray"), "stray");
+        let dir = root.join("out");
+
+        generate(root, &dir, &config("stray", "stray::all_stories")).unwrap_err();
+
+        assert!(!dir.exists(), "{} was written", dir.display());
     }
 
     #[test]
