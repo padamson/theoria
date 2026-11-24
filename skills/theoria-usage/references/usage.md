@@ -13,7 +13,8 @@
   (`width = 12.0` for an `f64`, not `12`), or as a `&'static str` for a
   `String`. An arg missing from the attribute starts at
   `Default::default()`. Without `name`, the story takes the function's
-  name.
+  name. A key that names no parameter is a compile error at the key,
+  and so is a parameter called `name`.
 - `Bounded::new(v).min(a).max(b).step(s)` (each bound optional) is a
   number control that gets a slider when it has both bounds and clamps a
   typed value to them, and snaps it to the step (counted from `min`), as

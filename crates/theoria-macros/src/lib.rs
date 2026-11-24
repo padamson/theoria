@@ -19,8 +19,8 @@
 
 use proc_macro::TokenStream;
 use proc_macro2::{Delimiter, TokenStream as TokenStream2, TokenTree};
-use quote::{format_ident, quote, quote_spanned};
-use std::collections::HashMap;
+use quote::{ToTokens, format_ident, quote, quote_spanned};
+use std::collections::{HashMap, HashSet};
 use syn::{
     Expr, FnArg, ItemFn, Lit, Meta, Pat, Token, Type, parse::Parser, punctuated::Punctuated,
     spanned::Spanned,
@@ -43,22 +43,28 @@ fn story_impl(attr: TokenStream2, item: TokenStream2) -> TokenStream2 {
         Err(e) => return e.to_compile_error(),
     };
 
+    let params: HashSet<String> = func.sig.inputs.iter().filter_map(param_name).collect();
+
     // `name = "..."` sets the story name; any other `key = expr` is a default for
     // the matching arg.
     let mut name_override: Option<Expr> = None;
     let mut defaults: HashMap<String, Expr> = HashMap::new();
     for meta in overrides {
-        if let Meta::NameValue(nv) = meta {
-            let key = nv
-                .path
-                .get_ident()
-                .map(ToString::to_string)
-                .unwrap_or_default();
-            if key == "name" {
-                name_override = Some(nv.value);
-            } else {
-                defaults.insert(key, nv.value);
-            }
+        let Meta::NameValue(nv) = meta else {
+            return syn::Error::new_spanned(meta, "a #[story] entry is written `key = value`")
+                .to_compile_error();
+        };
+        let key = nv.path.to_token_stream().to_string();
+        if key == "name" {
+            name_override = Some(nv.value);
+        } else if params.contains(&key) {
+            defaults.insert(key, nv.value);
+        } else {
+            return syn::Error::new_spanned(
+                &nv.path,
+                format!("`{key}` is not a parameter of this story"),
+            )
+            .to_compile_error();
         }
     }
 
@@ -106,6 +112,16 @@ fn story_impl(attr: TokenStream2, item: TokenStream2) -> TokenStream2 {
     }
 }
 
+fn param_name(input: &FnArg) -> Option<String> {
+    let FnArg::Typed(pt) = input else {
+        return None;
+    };
+    let Pat::Ident(pi) = &*pt.pat else {
+        return None;
+    };
+    Some(pi.ident.to_string())
+}
+
 /// What one story parameter adds to the generated constructor.
 struct ArgTokens {
     /// Outside the view closure: the arg's signal and its read side.
@@ -132,6 +148,12 @@ fn story_arg(input: &FnArg, defaults: &HashMap<String, Expr>) -> syn::Result<Arg
     let ident = &pi.ident;
     let mutability = &pi.mutability;
     let name = ident.to_string();
+    if name == "name" {
+        return Err(syn::Error::new_spanned(
+            ident,
+            "a #[story] parameter cannot be called `name`, which the attribute uses for the story's name",
+        ));
+    }
     let sig_ident = format_ident!("__sig_{}", ident);
     let read_ident = format_ident!("__read_{}", ident);
     let ty = &pt.ty;
@@ -360,6 +382,46 @@ mod tests {
         assert_eq!(type_label(&syn::parse_quote!(Grid<{ N }>)), "Grid<{N}>");
         let undelimited = proc_macro2::Group::new(Delimiter::None, quote!(f64));
         assert_eq!(join_tokens(quote!(Signal<#undelimited>)), "Signal<f64>");
+    }
+
+    fn expand(attr: TokenStream2, params: &TokenStream2) -> String {
+        story_impl(attr, quote! { fn x(#params) -> impl IntoView { view! {} } }).to_string()
+    }
+
+    #[test]
+    fn a_default_for_a_parameter_the_story_has_is_accepted() {
+        let out = expand(quote!(width = 12.0), &quote!(width: f64));
+        assert!(!out.contains("compile_error"), "got: {out}");
+    }
+
+    #[test]
+    fn a_default_for_a_parameter_the_story_lacks_is_rejected() {
+        let out = expand(quote!(widht = 12.0), &quote!(width: f64));
+        assert!(out.contains("compile_error"), "got: {out}");
+    }
+
+    #[test]
+    fn the_error_for_a_stray_default_names_its_key() {
+        let out = expand(quote!(widht = 12.0), &quote!(width: f64));
+        assert!(out.contains("`widht`"), "got: {out}");
+    }
+
+    #[test]
+    fn an_attribute_entry_with_no_value_is_rejected() {
+        let out = expand(quote!(active), &quote!(active: bool));
+        assert!(out.contains("compile_error"), "got: {out}");
+    }
+
+    #[test]
+    fn a_parameter_called_name_is_rejected() {
+        let out = expand(quote!(), &quote!(name: String));
+        assert!(out.contains("compile_error"), "got: {out}");
+    }
+
+    #[test]
+    fn a_name_in_the_attribute_is_not_taken_for_a_stray_default() {
+        let out = expand(quote!(name = "Demo/Width"), &quote!(width: f64));
+        assert!(!out.contains("compile_error"), "got: {out}");
     }
 
     #[test]
