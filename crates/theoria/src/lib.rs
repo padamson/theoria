@@ -39,6 +39,135 @@ pub enum ArgControl {
     Text(RwSignal<String>),
     Bounded(RwSignal<Bounded>),
     Color(RwSignal<Color>),
+    Choice(ChoiceControl),
+}
+
+/// A choice control's options and selection, whatever the [`Choice`]'s `T`.
+#[derive(Clone, Copy)]
+pub struct ChoiceControl {
+    labels: StoredValue<Vec<String>>,
+    selected: Signal<usize>,
+    select: Callback<usize>,
+}
+
+impl ChoiceControl {
+    /// Each option's label, in order.
+    #[must_use]
+    pub fn labels(&self) -> Vec<String> {
+        self.labels.get_value()
+    }
+
+    /// The selected option's index, tracked like a signal's `get`.
+    #[must_use]
+    pub fn selected(&self) -> usize {
+        self.selected.get()
+    }
+
+    /// Select the option at `index`. An index past the last option is
+    /// ignored.
+    pub fn select(&self, index: usize) {
+        self.select.run(index);
+    }
+}
+
+/// One of a fixed list of labelled values, drawn as a `<select>`. The story
+/// attribute gives the list, and the first option starts selected.
+///
+/// ```
+/// use leptos::prelude::*;
+/// use theoria::{Choice, story};
+///
+/// #[story(
+///     build = Choice::new(["dev", "0.13.0", "0.14.0"]).selected("0.14.0"),
+///     font = Choice::labelled([("Serif", "Georgia, serif"), ("Sans", "system-ui, sans-serif")]),
+/// )]
+/// fn bar(build: Signal<Choice<&'static str>>, font: Choice<&'static str>) -> impl IntoView {
+///     view! { <p style:font-family=font.value()>{move || build.get().value()}</p> }
+/// }
+/// ```
+///
+/// A `Choice` arg with no list in the attribute does not compile:
+///
+/// ```compile_fail
+/// use leptos::prelude::*;
+/// use theoria::{Choice, story};
+///
+/// #[story]
+/// fn bar(build: Choice<&'static str>) -> impl IntoView {
+///     view! { <p>{build.value()}</p> }
+/// }
+/// ```
+#[derive(Clone, Debug, PartialEq)]
+pub struct Choice<T> {
+    options: Vec<(String, T)>,
+    selected: usize,
+}
+
+impl<T> Choice<T> {
+    /// Values that are their own labels.
+    ///
+    /// # Panics
+    ///
+    /// If `values` is empty.
+    #[must_use]
+    pub fn new(values: impl IntoIterator<Item = T>) -> Self
+    where
+        T: ToString,
+    {
+        Self::labelled(values.into_iter().map(|value| (value.to_string(), value)))
+    }
+
+    /// Values under labels of their own, as `(label, value)`.
+    ///
+    /// # Panics
+    ///
+    /// If `options` is empty.
+    #[must_use]
+    pub fn labelled<L: Into<String>>(options: impl IntoIterator<Item = (L, T)>) -> Self {
+        let options: Vec<_> = options
+            .into_iter()
+            .map(|(label, value)| (label.into(), value))
+            .collect();
+        assert!(!options.is_empty(), "a Choice needs at least one option");
+        Self {
+            options,
+            selected: 0,
+        }
+    }
+
+    /// Start at the option labelled `label`, not the first.
+    ///
+    /// # Panics
+    ///
+    /// If no option has that label.
+    #[must_use]
+    pub fn selected(mut self, label: &str) -> Self {
+        self.selected = self
+            .options
+            .iter()
+            .position(|(l, _)| l == label)
+            .unwrap_or_else(|| panic!("Choice has no option labelled {label:?}"));
+        self
+    }
+
+    /// The selected option's value.
+    #[must_use]
+    pub fn value(&self) -> T
+    where
+        T: Clone,
+    {
+        self.options[self.selected].1.clone()
+    }
+
+    /// Whether selecting `index` changed the selection. An index past the
+    /// last option changes nothing.
+    fn select(&mut self, index: usize) -> bool {
+        let changed = index < self.options.len() && index != self.selected;
+        if changed {
+            self.selected = index;
+        }
+        changed
+    }
 }
 
 /// Any CSS color, as text, drawn as a swatch that opens the browser's
@@ -247,16 +376,13 @@ mod sealed {
     #[diagnostic::on_unimplemented(
         message = "`Signal<{Self}>` cannot be a #[story] arg",
         label = "no control for a signal of this type",
-        note = "a Signal arg holds a bool, f64, String, Bounded, or Color"
+        note = "a Signal arg holds a bool, f64, String, Bounded, Color, or Choice"
     )]
-    pub trait Plain:
-        super::StoryArg<Value = Self> + Clone + Default + Send + Sync + 'static
-    {
-    }
+    pub trait Plain: super::StoryArg<Value = Self> + Clone + Send + Sync + 'static {}
 }
 
 /// A type a `#[story]` parameter can have: `bool`, `f64`, `String`,
-/// [`Bounded`], [`Color`], or a `Signal` of one, which hands the body the
+/// [`Bounded`], [`Color`], [`Choice`], or a `Signal` of one, which hands the body the
 /// arg's signal, not its value.
 ///
 /// ```
@@ -285,11 +411,11 @@ mod sealed {
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot be a #[story] arg",
     label = "no control for this type",
-    note = "a #[story] arg is a bool, f64, String, Bounded, or Color, or a `Signal` of one (not an `RwSignal`)"
+    note = "a #[story] arg is a bool, f64, String, Bounded, Color, or Choice, or a `Signal` of one (not an `RwSignal`)"
 )]
 pub trait StoryArg: Sized + sealed::Sealed {
     /// What the arg's control edits.
-    type Value: Clone + Default + Send + Sync + 'static;
+    type Value: Clone + Send + Sync + 'static;
 
     /// What a default in the story attribute is written as.
     type Init: Into<Self::Value>;
@@ -326,6 +452,35 @@ value_arg!(f64, init: f64, control: Num);
 value_arg!(String, init: &'static str, control: Text);
 value_arg!(Bounded, init: Bounded, control: Bounded);
 value_arg!(Color, init: &'static str, control: Color);
+
+impl<T> sealed::Sealed for Choice<T> {}
+impl<T: Clone + Send + Sync + 'static> sealed::Plain for Choice<T> {}
+
+impl<T: Clone + Send + Sync + 'static> StoryArg for Choice<T> {
+    type Value = Self;
+    type Init = Self;
+
+    fn control(signal: RwSignal<Self>) -> ArgControl {
+        let labels = signal.with_untracked(|choice| {
+            choice
+                .options
+                .iter()
+                .map(|(label, _)| label.clone())
+                .collect()
+        });
+        ArgControl::Choice(ChoiceControl {
+            labels: StoredValue::new(labels),
+            selected: Signal::derive(move || signal.with(|choice| choice.selected)),
+            select: Callback::new(move |index: usize| {
+                signal.maybe_update(|choice| choice.select(index));
+            }),
+        })
+    }
+
+    fn bind(signal: Signal<Self>) -> Self {
+        signal.get()
+    }
+}
 
 impl<T: sealed::Plain> sealed::Sealed for Signal<T> {}
 
@@ -665,6 +820,120 @@ mod story_macro_tests {
         view! { <p>{ink.as_str().to_string()}</p> }
     }
 
+    #[story(build = Choice::new(["dev", "0.13.0", "0.14.0"]).selected("0.13.0"))]
+    fn build(build: Choice<&'static str>) -> impl IntoView {
+        view! { <p>{build.value()}</p> }
+    }
+
+    fn choice_control(story: &Story, name: &str) -> ChoiceControl {
+        let arg = arg(story, name);
+        let ArgControl::Choice(control) = arg.control() else {
+            panic!("`{name}: {}` did not get the choice control", arg.ty());
+        };
+        control
+    }
+
+    #[test]
+    fn a_choice_arg_starts_at_the_option_its_attribute_selects() {
+        Owner::new().with(|| {
+            let html = (build().view)().to_html();
+            assert!(html.contains(">0.13.0<"), "got: {html}");
+        });
+    }
+
+    #[test]
+    fn selecting_an_option_gives_the_story_its_value() {
+        Owner::new().with(|| {
+            let story = build();
+            choice_control(&story, "build").select(2);
+            let html = (story.view)().to_html();
+            assert!(html.contains(">0.14.0<"), "got: {html}");
+        });
+    }
+
+    #[test]
+    fn selecting_an_option_moves_the_controls_selection() {
+        Owner::new().with(|| {
+            let control = choice_control(&build(), "build");
+            control.select(2);
+            assert_eq!(control.selected(), 2);
+        });
+    }
+
+    #[test]
+    fn selecting_past_the_last_option_keeps_the_storys_value() {
+        Owner::new().with(|| {
+            let story = build();
+            choice_control(&story, "build").select(3);
+            let html = (story.view)().to_html();
+            assert!(html.contains(">0.13.0<"), "got: {html}");
+        });
+    }
+
+    static CHOICE_BODY_RUNS: AtomicUsize = AtomicUsize::new(0);
+
+    #[story(build = Choice::new(["dev", "0.13.0"]))]
+    fn build_counted(build: Choice<&'static str>) -> impl IntoView {
+        CHOICE_BODY_RUNS.fetch_add(1, Ordering::SeqCst);
+        view! { <p>{build.value()}</p> }
+    }
+
+    #[test]
+    fn selecting_another_option_reruns_the_story_body() {
+        Owner::new().with(|| {
+            let story = build_counted();
+            let control = choice_control(&story, "build");
+            let stage = Memo::new(move |_| drop((story.view)()));
+            stage.get();
+            control.select(1);
+            stage.get();
+        });
+        assert_eq!(CHOICE_BODY_RUNS.load(Ordering::SeqCst), 2);
+    }
+
+    static SAME_CHOICE_BODY_RUNS: AtomicUsize = AtomicUsize::new(0);
+
+    #[story(build = Choice::new(["dev", "0.13.0"]))]
+    fn build_counted_again(build: Choice<&'static str>) -> impl IntoView {
+        SAME_CHOICE_BODY_RUNS.fetch_add(1, Ordering::SeqCst);
+        view! { <p>{build.value()}</p> }
+    }
+
+    #[test]
+    fn selecting_the_selected_option_leaves_the_story_body_alone() {
+        Owner::new().with(|| {
+            let story = build_counted_again();
+            let control = choice_control(&story, "build");
+            let stage = Memo::new(move |_| drop((story.view)()));
+            stage.get();
+            control.select(0);
+            stage.get();
+        });
+        assert_eq!(SAME_CHOICE_BODY_RUNS.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn a_choice_control_lists_its_options_labels() {
+        Owner::new().with(|| {
+            let control = choice_control(&build(), "build");
+            assert_eq!(control.labels(), ["dev", "0.13.0", "0.14.0"]);
+        });
+    }
+
+    // What makes a `Choice` arg with no list in the attribute a compile
+    // error: the macro falls back on `Default`.
+    #[test]
+    fn a_choice_has_no_default() {
+        trait NoDefault<A> {
+            fn check() {}
+        }
+        impl<T: ?Sized> NoDefault<()> for T {}
+        #[allow(dead_code)]
+        struct HasDefault;
+        impl<T: Default> NoDefault<HasDefault> for T {}
+        <Choice<&'static str> as NoDefault<_>>::check();
+    }
+
     #[test]
     fn a_color_arg_gets_the_color_control_at_its_default() {
         Owner::new().with(|| {
@@ -840,5 +1109,45 @@ mod bounded_tests {
     #[test]
     fn without_a_step_a_value_between_the_bounds_is_kept() {
         assert_eq!(unit().with_value(0.3).value(), 0.3);
+    }
+}
+
+#[cfg(test)]
+mod choice_tests {
+    use super::Choice;
+
+    #[test]
+    fn the_first_option_starts_selected() {
+        assert_eq!(Choice::new(["dev", "0.13.0"]).value(), "dev");
+    }
+
+    #[test]
+    fn a_labelled_option_gives_its_value_not_its_label() {
+        let font = Choice::labelled([("Serif", "Georgia, serif")]);
+        assert_eq!(font.value(), "Georgia, serif");
+    }
+
+    #[test]
+    fn selected_starts_at_the_option_with_that_label() {
+        let font = Choice::labelled([("Serif", "Georgia, serif"), ("Sans", "system-ui")]);
+        assert_eq!(font.selected("Sans").value(), "system-ui");
+    }
+
+    #[test]
+    fn selected_starts_at_the_first_option_with_that_label() {
+        let twins = Choice::labelled([("A", 1), ("A", 2)]);
+        assert_eq!(twins.selected("A").value(), 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "Choice has no option labelled \"1.0.0\"")]
+    fn selected_with_a_label_no_option_has_panics() {
+        let _ = Choice::new(["dev", "0.13.0"]).selected("1.0.0");
+    }
+
+    #[test]
+    #[should_panic(expected = "a Choice needs at least one option")]
+    fn a_choice_with_no_options_panics() {
+        let _ = Choice::new(Vec::<&str>::new());
     }
 }

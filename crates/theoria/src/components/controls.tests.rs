@@ -4,7 +4,7 @@ use leptos::prelude::*;
 
 use super::Controls;
 use super::controls::picker_start;
-use crate::{Arg, ArgControl, Bounded, Color};
+use crate::{Arg, ArgControl, Bounded, Choice, Color, StoryArg};
 
 #[test]
 fn renders_a_widget_per_arg() {
@@ -230,4 +230,46 @@ fn a_text_control_starts_at_its_arg() {
     });
     let text = input_tag(&html, "text");
     assert!(text.contains(r#"value="Patio""#), "got: {text}");
+}
+
+fn choice_control(choice: Choice<&'static str>) -> String {
+    leptotes::render(move || {
+        let control = Choice::control(RwSignal::new(choice.clone()));
+        view! { <Controls args=vec![Arg::new("build", "Choice<&'static str>", control)] /> }
+    })
+}
+
+#[test]
+fn a_choice_control_draws_a_select() {
+    let html = choice_control(Choice::new(["dev", "0.13.0"]));
+    assert_eq!(leptotes::count(&html, "<select"), 1, "got:\n{html}");
+}
+
+#[test]
+fn a_choice_control_lists_each_option_under_its_label() {
+    let html = choice_control(Choice::labelled([
+        ("Serif", "Georgia, serif"),
+        ("Sans", "system-ui"),
+    ]));
+    for label in [">Serif</option>", ">Sans</option>"] {
+        assert_eq!(leptotes::count(&html, label), 1, "{label}; got:\n{html}");
+    }
+}
+
+/// The labels of the options marked `selected` in `html`.
+fn selected_labels(html: &str) -> Vec<&str> {
+    html.split("<option")
+        .skip(1)
+        .filter_map(|rest| {
+            let (tag, after) = rest.split_once('>')?;
+            let (label, _) = after.split_once("</option>")?;
+            tag.contains(" selected").then_some(label)
+        })
+        .collect()
+}
+
+#[test]
+fn a_choice_control_marks_the_selected_option_alone() {
+    let html = choice_control(Choice::new(["dev", "0.13.0", "0.14.0"]).selected("0.13.0"));
+    assert_eq!(selected_labels(&html), ["0.13.0"], "got:\n{html}");
 }

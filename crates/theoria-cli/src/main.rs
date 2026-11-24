@@ -254,11 +254,12 @@ const GALLERY_INDEX_HTML: &str = r#"<!DOCTYPE html>
       .theoria-controls { background: #fff; border: 1px solid #e3dccb; border-radius: 10px; overflow: hidden; font-size: 13px; }
       .theoria-controls .control-row { padding: 8px 10px; border-top: 1px solid #f0eadd; }
       .theoria-controls .control-row:first-child { border-top: none; }
-      .theoria-controls .control-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
-      .theoria-controls .control-name { color: #2c2a25; font-weight: 600; white-space: nowrap; }
+      .theoria-controls .control-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 10px; margin-bottom: 4px; }
+      .theoria-controls .control-name { min-width: 0; color: #2c2a25; font-weight: 600; overflow-wrap: anywhere; }
       .theoria-controls .control-type { min-width: 0; color: #5c6b4f; font-size: 12px; text-align: right; overflow-wrap: anywhere; }
-      .theoria-controls .control-input input { width: 100%; box-sizing: border-box; padding: 3px 6px; border: 1px solid #d8d0be; border-radius: 6px; font: inherit; }
+      .theoria-controls .control-input input, .theoria-controls .control-input select { width: 100%; box-sizing: border-box; padding: 3px 6px; border: 1px solid #d8d0be; border-radius: 6px; font: inherit; }
       .theoria-controls .control-input input[type=checkbox] { width: auto; }
+      .theoria-controls .control-input select { background: #fff; }
       .theoria-controls .control-input input[type=range] { flex: 1 1 6em; min-width: 0; padding: 0; border: none; }
       .theoria-bounded { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
       .theoria-bounded input[type=number] { flex: 1 1 4.5em; min-width: 0; }

@@ -45,9 +45,12 @@ quick and the rest of the stage keeps its state.
   - [x] each control sits under its arg's name and type, as wide as the
         panel, so a long name or type cannot squeeze it and a color
         function shows whole
-- **T17.3 — choice**
-  - [ ] `theoria::Choice<T>`, a list of labelled values built in the story
+- **T17.3 — choice** ✅
+  - [x] `theoria::Choice<T>`, a list of labelled values built in the story
         attribute, drawn as a `<select>`; the body gets the selected `T`
+  - [x] the menu shows the selected story's selection after a switch, and
+        its own again when its story is selected again
+  - [x] a `Choice` arg with no list in the attribute is a compile error
 
 ## Notes / refs
 

@@ -53,7 +53,9 @@ A `theoria::Bounded` parameter is a number with optional bounds and step,
 set in the attribute (`radius = Bounded::new(0.25).min(0.0).max(1.0)`);
 with both bounds it gets a slider. A `theoria::Color` parameter is any CSS
 color as text (`ink = "rgb(36 56 50 / 0.8)"`), with a swatch that shows it
-and opens the browser's picker.
+and opens the browser's picker. A `theoria::Choice<T>` parameter is one of
+a list of values given in the attribute
+(`build = Choice::new(["dev", "0.13.0"])`), picked from a menu.
 
 The `/` in a name nests the story in the sidebar. Your crate collects its
 stories in a function returning `theoria::Stories`, usually behind a

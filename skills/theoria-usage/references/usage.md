@@ -5,8 +5,8 @@
   `/` in `name` nests it in the sidebar.
 - `#[story(name = "Group/Name", arg = default, ...)]` on `fn x(arg: T,
   ...) -> impl IntoView`: generates `fn x() -> Story` with one control per
-  parameter. `T` is `bool`, `f64`, `String`, `Bounded`, or `Color`, or
-  `Signal<T>` over one of them (the types that implement
+  parameter. `T` is `bool`, `f64`, `String`, `Bounded`, `Color`, or
+  `Choice<V>`, or `Signal<T>` over one of them (the types that implement
   `theoria::StoryArg`, which is sealed);
   anything else is a compile error at the parameter, "`i32` cannot be a
   #[story] arg". A default in the attribute is written as the arg's value
@@ -27,6 +27,14 @@
   a color. It opens the browser's picker, which writes `#rrggbb` into the
   text and so drops any alpha. The story gets the text as typed. The body
   reads it with `.as_str()` or `to_string()`.
+- `Choice<V>` is one of a fixed list of values, picked from a menu (a
+  `<select>`). The attribute gives the list: `Choice::new(["dev",
+  "0.13.0"])` labels each value by its text, and `Choice::labelled([("Serif",
+  "Georgia, serif"), ...])` gives each its own label. The first option
+  starts selected unless `.selected("label")` names another. An empty
+  list, or a label no option has, panics when the story is built, and a
+  `Choice` arg with no list in the attribute does not compile. The body
+  reads the selected value with `.value()`.
 - A `T` parameter is read inside the generated view closure, so an edit to
   it runs the whole body again (and resets any signal the body creates). A
   `Signal<T>` parameter is the arg's signal, the same one on every run,

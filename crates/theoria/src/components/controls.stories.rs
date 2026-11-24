@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 
 use super::Controls;
-use crate::{Arg, ArgControl, Bounded, Color, Story, story};
+use crate::{Arg, ArgControl, Bounded, Choice, Color, Story, story};
 
 /// A **knobs** demo: edit the controls and watch the stage update live.
 ///
@@ -77,23 +77,52 @@ fn knobs_color(ink: Signal<Color>) -> impl IntoView {
     }
 }
 
+/// A **choice**: one of a fixed list, picked from a menu. Here each value
+/// is its own label.
+#[story(name = "Knobs · choice", build = Choice::new(["dev", "0.13.0", "0.14.0"]).selected("0.13.0"))]
+fn knobs_choice(build: Signal<Choice<&'static str>>) -> impl IntoView {
+    view! { <p class="k-build">{move || build.get().value()}</p> }
+}
+
+/// A choice of **labelled** values: the menu shows each label, and the story
+/// gets the value under it.
+#[story(
+    name = "Knobs · labelled choice",
+    font = Choice::labelled([("Serif", "Georgia, serif"), ("Sans", "system-ui, sans-serif")])
+        .selected("Sans"),
+)]
+fn knobs_labelled_choice(font: Choice<&'static str>) -> impl IntoView {
+    let font = font.value();
+    view! { <p class="k-font" style:font-family=font>{font}</p> }
+}
+
 pub fn stories() -> Vec<Story> {
     vec![
         knobs(),
         knobs_as_signals(),
         knobs_bounded(),
         knobs_color(),
+        knobs_choice(),
+        knobs_labelled_choice(),
+        // At the panel's width, with a name and a type too long for one line.
         Story::new("Controls · panel", || {
             view! {
-                <Controls args=vec![
-                    Arg::new("active", "bool", ArgControl::Bool(RwSignal::new(true))),
-                    Arg::new("width_ft", "f64", ArgControl::Num(RwSignal::new(12.0))),
-                    Arg::new(
-                        "label",
-                        "String",
-                        ArgControl::Text(RwSignal::new("Patio".to_string())),
-                    ),
-                ] />
+                <div style="width: 280px">
+                    <Controls args=vec![
+                        Arg::new("active", "bool", ArgControl::Bool(RwSignal::new(true))),
+                        Arg::new("width_ft", "f64", ArgControl::Num(RwSignal::new(12.0))),
+                        Arg::new(
+                            "label",
+                            "String",
+                            ArgControl::Text(RwSignal::new("Patio".to_string())),
+                        ),
+                        Arg::new(
+                            "selected_row_background_highlight_color_when_hovered",
+                            "leptos::prelude::Signal<theoria::Color>",
+                            ArgControl::Color(RwSignal::new(Color::from("#243832"))),
+                        ),
+                    ] />
+                </div>
             }
         }),
     ]

@@ -6,7 +6,7 @@
 
 use leptos::prelude::*;
 
-use crate::{Arg, ArgControl, Bounded, Color};
+use crate::{Arg, ArgControl, Bounded, ChoiceControl, Color};
 
 /// A number input's starting `value`: the arg, or none for one that is not
 /// finite, since the input rejects `NaN` and `inf` and would log a warning.
@@ -14,7 +14,7 @@ fn number_value(value: f64) -> Option<String> {
     value.is_finite().then(|| value.to_string())
 }
 
-fn parse(ev: &leptos::ev::Event) -> Option<f64> {
+fn parse<T: std::str::FromStr>(ev: &leptos::ev::Event) -> Option<T> {
     event_target_value(ev).parse().ok()
 }
 
@@ -193,6 +193,33 @@ fn color_widget(s: RwSignal<Color>) -> impl IntoView {
     }
 }
 
+fn choice_widget(choice: ChoiceControl) -> impl IntoView {
+    let start = choice.selected.get_untracked();
+    let options = choice
+        .labels()
+        .into_iter()
+        .enumerate()
+        .map(|(index, label)| {
+            view! {
+                <option
+                    value=index.to_string()
+                    selected=index == start
+                    prop:selected=move || choice.selected() == index
+                >
+                    {label}
+                </option>
+            }
+        })
+        .collect::<Vec<_>>();
+    view! {
+        <select on:change=move |ev| {
+            if let Some(index) = parse(&ev) {
+                choice.select(index);
+            }
+        }>{options}</select>
+    }
+}
+
 #[component]
 pub fn Controls(args: Vec<Arg>) -> impl IntoView {
     (!args.is_empty()).then(move || {
@@ -219,6 +246,7 @@ pub fn Controls(args: Vec<Arg>) -> impl IntoView {
                     .into_any(),
                     ArgControl::Bounded(s) => bounded_widget(s).into_any(),
                     ArgControl::Color(s) => color_widget(s).into_any(),
+                    ArgControl::Choice(choice) => choice_widget(choice).into_any(),
                 };
                 view! {
                     <div class="control-row">

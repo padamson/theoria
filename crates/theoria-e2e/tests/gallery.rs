@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context, Result, ensure};
 use axum::Router;
 use playwright_rs::expect;
-use playwright_rs::protocol::{Page, Playwright};
+use playwright_rs::protocol::{Locator, Page, Playwright, SelectOption};
 use tower_http::services::ServeDir;
 
 fn dist_dir() -> PathBuf {
@@ -70,6 +70,28 @@ async fn select(page: &Page, story: &str) -> Result<()> {
         .click(None)
         .await
         .with_context(|| format!("select the story {story:?}"))
+}
+
+/// Pick the option labelled `label` from the panel's menu.
+async fn choose(page: &Page, label: &str) -> Result<()> {
+    page.locator(".theoria-panel select")
+        .select_option(SelectOption::Label(label.to_string()), None)
+        .await
+        .map(drop)
+        .with_context(|| format!("choose the option {label:?}"))
+}
+
+/// Fails when `what` needs more width than it shows.
+async fn ensure_fits(locator: &Locator, what: &str) -> Result<()> {
+    let (shown, needed): (f64, f64) = locator
+        .evaluate("el => [el.clientWidth, el.scrollWidth]", None::<()>)
+        .await
+        .with_context(|| format!("measure {what}"))?;
+    ensure!(
+        needed <= shown,
+        "{what} needs {needed}px and shows {shown}px"
+    );
+    Ok(())
 }
 
 /// Discover every story from the gallery sidebar and assert each one selects and
@@ -156,7 +178,7 @@ async fn controls_drive_the_stage_live() -> Result<()> {
             .await
             .context("show-code toggle present")?;
 
-        // Autodocs: the doc-comment renders as Markdown (bold + a list), and the
+        // Autodocs: the doc-comment renders as Markdown (bold + a list), and
         // each control row documents its arg's type.
         let strong = page
             .locator(".theoria-panel .theoria-md strong")
@@ -690,14 +712,7 @@ async fn a_color_text_field_shows_the_whole_of_a_color_function() -> Result<()> 
             .await
             .context("type an rgb() color")?;
 
-        let (shown, needed): (f64, f64) = text
-            .evaluate("el => [el.clientWidth, el.scrollWidth]", None::<()>)
-            .await
-            .context("measure the text field")?;
-        ensure!(
-            needed <= shown,
-            "the text needs {needed}px and the field shows {shown}px"
-        );
+        ensure_fits(&text, "the text field").await?;
 
         Ok(())
     })
@@ -733,6 +748,150 @@ async fn a_control_sits_under_its_args_name_and_type() -> Result<()> {
         );
 
         Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_choice_control_starts_at_the_storys_selected_option() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · choice").await?;
+
+        expect(page.locator(".theoria-panel select option:checked"))
+            .to_have_text("0.13.0")
+            .await
+            .context("the menu shows the story's selected option")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn choosing_an_option_reaches_the_story() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · choice").await?;
+        choose(page, "0.14.0").await?;
+
+        expect(page.locator(".theoria-stage .k-build"))
+            .to_have_text("0.14.0")
+            .await
+            .context("the story gets the chosen build")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn choosing_a_labelled_option_gives_the_story_the_value_under_it() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · labelled choice").await?;
+        choose(page, "Serif").await?;
+
+        expect(page.locator(".theoria-stage .k-font"))
+            .to_have_text("Georgia, serif")
+            .await
+            .context("the story gets the font stack under the label")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_choice_control_shows_the_next_storys_selection() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · choice").await?;
+        choose(page, "dev").await?;
+        select(page, "Knobs · labelled choice").await?;
+
+        expect(page.locator(".theoria-panel select option:checked"))
+            .to_have_text("Sans")
+            .await
+            .context("the menu shows the newly selected story's option")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_choice_control_keeps_its_selection_when_its_story_is_selected_again() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · choice").await?;
+        choose(page, "0.14.0").await?;
+        select(page, "Knobs · labelled choice").await?;
+        select(page, "Knobs · choice").await?;
+
+        expect(page.locator(".theoria-panel select option:checked"))
+            .to_have_text("0.14.0")
+            .await
+            .context("the menu shows the option chosen before")?;
+
+        Ok(())
+    })
+    .await
+}
+
+/// The heights of the first and the last element `selector` finds on the
+/// stage: a row with a short name and type, then one with long ones.
+async fn first_and_last_heights(page: &Page, selector: &str) -> Result<(f64, f64)> {
+    let found = page.locator(format!(".theoria-stage {selector}"));
+    let short = found
+        .first()
+        .bounding_box()
+        .await?
+        .context("the short one is laid out")?;
+    let long = found
+        .last()
+        .bounding_box()
+        .await?
+        .context("the long one is laid out")?;
+    Ok((short.height, long.height))
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn an_arg_name_too_long_for_one_line_wraps_inside_the_controls() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Controls · panel").await?;
+
+        let (short, long) = first_and_last_heights(page, ".control-name").await?;
+        ensure!(
+            long > short,
+            "the long name is on one line: {long}px tall beside a short name's {short}px"
+        );
+        ensure_fits(
+            &page.locator(".theoria-stage .theoria-controls"),
+            "the list of controls",
+        )
+        .await
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn an_arg_type_too_long_for_one_line_wraps_inside_the_controls() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Controls · panel").await?;
+
+        let (short, long) = first_and_last_heights(page, ".control-type").await?;
+        ensure!(
+            long > short,
+            "the long type is on one line: {long}px tall beside a short type's {short}px"
+        );
+        ensure_fits(
+            &page.locator(".theoria-stage .theoria-controls"),
+            "the list of controls",
+        )
+        .await
     })
     .await
 }
