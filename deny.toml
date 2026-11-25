@@ -68,4 +68,10 @@ skip-tree = []
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = ["https://github.com/padamson/leptotes"]
+# playwright-rust is crates/theoria-e2e's, which is outside the workspace:
+# CI's deny job checks it through `deny-manifests` against this file, so a
+# run on the root workspace reports it as an unmatched source.
+allow-git = [
+    "https://github.com/padamson/leptotes",
+    "https://github.com/padamson/playwright-rust",
+]

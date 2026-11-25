@@ -75,9 +75,9 @@ required_checks() {
     "Test on macos-latest" \
     "Test on windows-latest" \
     "E2E" \
-    "License & Dependency Check" \
-    "Supply Chain Review" \
-    "Mutation Testing (diff)"
+    "supply-chain / License & Dependency Check" \
+    "supply-chain / Supply Chain Review" \
+    "mutation / Mutation Testing (diff)"
   if [ -d skills ]; then echo "Skill version guard"; fi
 }
 
