@@ -84,13 +84,51 @@ aggregator = "my_components::all_stories"
 features = ["stories"]
 ```
 
-Then:
+Then build the CLI in your own workspace, from the same theoria commit as
+your stories. `Cargo.lock` records that commit, so when it moves (by hand or
+through Dependabot) the CLI moves with it. Add a package for it, say `tools/gallery`, whose one dependency is `theoria-cli`, written the
+way you write `theoria` (the same `git` and the same `branch`, `tag`, or
+`rev`; cargo locks a different reference on its own, and the two drift
+apart):
+
+```toml
+[package]
+name = "gallery"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+theoria-cli = { git = "https://github.com/padamson/theoria" }
+```
+
+Its `src/main.rs` is the whole CLI:
+
+```rust
+fn main() -> std::process::ExitCode {
+    theoria_cli::run(std::env::args_os())
+}
+```
+
+and an alias in `.cargo/config.toml` names it:
+
+```toml
+[alias]
+theoria = "run -q -p gallery --"
+```
 
 ```bash
-cargo install --locked --git https://github.com/padamson/theoria theoria-cli
-theoria serve          # http://localhost:8081, rebuilt on every source edit
-theoria build          # a static gallery under target/theoria/gallery
+cargo theoria serve    # http://localhost:8081, rebuilt on every source edit
+cargo theoria build    # a static gallery under target/theoria/gallery
 ```
+
+A package of its own, rather than an example in your components' crate,
+builds none of your components natively just to start the CLI, and keeps
+the CLI out of their test builds.
+
+`cargo install --locked --git https://github.com/padamson/theoria
+theoria-cli` puts a `theoria` on your PATH instead, at whatever commit
+`main` had that day, which may not match the theoria your stories build on.
 
 The generated app is its own workspace, so each run copies the `Cargo.lock`
 of your crate's workspace into it, and the gallery builds on the versions

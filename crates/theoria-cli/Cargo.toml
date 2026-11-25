@@ -10,7 +10,8 @@ authors.workspace = true
 categories = ["command-line-utilities", "development-tools", "gui"]
 keywords = ["leptos", "storybook", "components", "trunk"]
 
-# Produces the `theoria` binary (the Storybook-style dev tool). Native-only
+# Produces the `theoria` binary (the Storybook-style dev tool), a thin
+# wrapper over the library's `run` (the crate docs say why). Native-only
 # orchestration (no Leptos), so it's a fast workspace member.
 [[bin]]
 name = "theoria"

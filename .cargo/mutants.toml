@@ -47,10 +47,10 @@ examine_globs = [
 
 # Every exclude carries its equivalence argument next to it.
 exclude_re = [
-    # theoria-cli `main` and `trunk`: I/O orchestration (parse args, shell
-    # out to `trunk`). theoria-e2e exercises them end to end by building
-    # the gallery through the CLI; no native test can.
-    'replace main -> Result',
+    # theoria-cli `main` and `trunk`: the binary's call to `run`, and
+    # shelling out to `trunk`. theoria-e2e exercises them end to end by
+    # building the gallery through the CLI; no native test can.
+    'replace main -> std::process::ExitCode',
     'replace trunk -> Result',
     'delete ! in trunk',
     # theoria-macros `story`: the proc_macro to proc_macro2 adapter, which

@@ -10,7 +10,8 @@ Three published crates and one test crate:
   parameters into live controls and captures its source and doc comment.
 - `crates/theoria-cli`: the `theoria` binary (`serve`, `build`,
   `generate`), which writes a Trunk app under `target/theoria/gallery`
-  from a `theoria.toml` and runs Trunk on it.
+  from a `theoria.toml` and runs Trunk on it. Its `main` only calls the
+  library's `theoria_cli::run`.
 - `crates/theoria-e2e` (outside the workspace): builds a gallery from
   theoria's own components (`theoria-e2e.toml`) and drives it in Chromium
   with playwright-rs.

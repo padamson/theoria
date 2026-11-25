@@ -26,10 +26,19 @@ gallery app — the Storybook `dev` experience for theoria.
   - [x] cargo says which workspace that is, so a crate excluded from the
     workspace around it gets its own lockfile
   - [x] a crate its workspace neither lists nor excludes is refused
+- **T9.4 — build the CLI from the theoria commit the stories use** (pulled by pyle,
+  whose CI read theoria's commit out of `Cargo.lock` to install the CLI,
+  and by slp and pyle, whose installed `theoria` was older than the
+  library their stories built on)
+  - [x] `theoria-cli` is a library too: `theoria_cli::run(args)` is the
+    whole CLI, and the binary's `main` only calls it
+  - [x] a workspace with stories builds the CLI as a three-line package of
+    its own, on its own lockfile, with no native build of its components
 
 ## Notes / refs
 
-- Lives in `crates/theoria-cli` (bin `theoria`); native orchestration, no Leptos.
+- Lives in `crates/theoria-cli` (lib `theoria_cli`, bin `theoria`); native
+  orchestration, no Leptos.
 - The harness declares no theoria of its own: it calls `mount()` on the
   aggregator's `Stories`, so it builds with the theoria the stories crate
   has.

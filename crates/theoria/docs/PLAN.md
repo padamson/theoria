@@ -44,6 +44,13 @@ already ships, so they are fixed when found to matter, not pulled.
   workspace is not applied to it: a crate that patches theoria (or anything
   else) to a checkout gets the unpatched version in the gallery, or no build
   if that version is not published.
+- **The gallery's CSS lives in the CLI** (`theoria-cli`,
+  `GALLERY_INDEX_HTML`). The styles for the components' own classes are
+  written into the generated `index.html`, so a CLI older than the library
+  draws a new control unstyled, and each control added so far changed the
+  CLI too. If `Gallery` carried its own stylesheet, the generated files
+  would rarely change between theoria commits, and the CLI could warn when
+  the lockfile's theoria is not its own.
 - **A theoria taken by path is not watched** (`theoria-cli`, `generate`).
   `Trunk.toml` watches only the stories crate's `src/`, so with theoria
   checked out beside a consumer, an edit to theoria rebuilds the gallery

@@ -68,6 +68,20 @@
 - `theoria serve [--port 8081]`, `theoria build`, `theoria generate`, each
   with `--config <file>` (default `theoria.toml`). A config change needs a
   re-run of `serve`.
+- Build the CLI in the consumer's workspace, so it comes from the same
+  theoria commit as the stories (the one in the consumer's `Cargo.lock`):
+  a small package (say
+  `tools/gallery`) whose one dependency is `theoria-cli`, written with the
+  same `git` and the same `branch`, `tag`, or `rev` as `theoria` (a
+  different reference is locked on its own and drifts), and whose
+  `src/main.rs` is
+  `fn main() -> std::process::ExitCode { theoria_cli::run(std::env::args_os()) }`.
+  `[alias] theoria = "run -q -p gallery --"` in `.cargo/config.toml` makes
+  it `cargo theoria serve`. Not an example in the components' crate: an
+  example links that crate, so it builds the components natively, and
+  `cargo test` builds the CLI with every run. A `theoria` from `cargo
+  install` stays at the commit it was installed from, and one older than
+  the library fails or rewrites the gallery in an old shape.
 - Each run copies the `Cargo.lock` of the stories crate's workspace into
   the generated app (its own workspace), so the gallery builds on the
   versions that lockfile records and needs no lockfile copied in by hand.

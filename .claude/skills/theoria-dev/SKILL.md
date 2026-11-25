@@ -31,7 +31,10 @@ gates, and `skills/theoria-usage/` is what a consumer reads.
   for every one, so a new control is a `StoryArg` impl in `theoria` (its
   `Value`, its `ArgControl`, and `bind`), not a change to the macro, and an
   unsupported type is a rustc trait error at the parameter.
-- `crates/theoria-cli`: the `theoria` binary. No Leptos; native only.
+- `crates/theoria-cli`: the `theoria` binary, whose `main` only calls the
+  library's `theoria_cli::run(args)`, so a consumer can build the CLI as a
+  three-line package in its own workspace, from the theoria commit in its
+  `Cargo.lock`. No Leptos; native only.
 - `crates/theoria-e2e`: outside the workspace, with its own `Cargo.lock`,
   because it pulls playwright-rs and tokio and would slow every workspace
   command.
@@ -60,6 +63,8 @@ a gallery from `theoria::stories`). Never put a `Gallery` inside a
   `Story` it builds (inside an `Owner`, since the args are signals).
 - **CLI:** `render` returns the harness's `Cargo.toml`, `src/main.rs`, and
   `Trunk.toml` as strings, and the tests parse the TOML and compare values.
+  `run` is tested with the arguments a shell would pass, for its exit code
+  and the files it writes.
   `generate` is tested only for the wiring: each rendered string reaches
   its file in a `TempDir`, a bad config is refused, and the right
   `Cargo.lock` is copied in. Its fixtures are workspaces cargo can load
