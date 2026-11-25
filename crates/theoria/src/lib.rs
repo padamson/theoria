@@ -559,6 +559,39 @@ impl Story {
         }
     }
 
+    /// Give the story a Markdown description, for the gallery's docs panel.
+    ///
+    /// ```
+    /// use theoria::Story;
+    ///
+    /// let story = Story::new("Version bar/Without the manifest", || "0.13.0")
+    ///     .with_description("What the bar shows when the manifest is **missing**.");
+    /// assert_eq!(
+    ///     story.description(),
+    ///     Some("What the bar shows when the manifest is **missing**.")
+    /// );
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// If the story already has a description (a `#[story]` function's doc
+    /// comment is one), or if `description` is blank.
+    #[must_use]
+    pub fn with_description(mut self, description: &'static str) -> Self {
+        assert!(
+            self.description.is_none(),
+            "story {:?} already has a description",
+            self.name
+        );
+        assert!(
+            !description.trim().is_empty(),
+            "story {:?} has a blank description",
+            self.name
+        );
+        self.description = Some(description);
+        self
+    }
+
     /// The story's display name (a `/`-delimited path; see the sidebar tree).
     #[must_use]
     pub fn name(&self) -> &'static str {
@@ -648,6 +681,25 @@ impl Extend<Story> for Stories {
 }
 
 #[cfg(test)]
+mod story_tests {
+    use super::*;
+
+    #[test]
+    #[should_panic(expected = r#"story "A" already has a description"#)]
+    fn a_second_description_panics() {
+        let _ = Story::new("A", || "a")
+            .with_description("first")
+            .with_description("second");
+    }
+
+    #[test]
+    #[should_panic(expected = r#"story "A" has a blank description"#)]
+    fn a_blank_description_panics() {
+        let _ = Story::new("A", || "a").with_description(" \n");
+    }
+}
+
+#[cfg(test)]
 mod story_macro_tests {
     use super::*;
 
@@ -656,6 +708,14 @@ mod story_macro_tests {
     fn widget(active: bool, width: f64, label: String) -> impl IntoView {
         // Reference each arg so the body genuinely depends on them.
         view! { <div data-active=active data-width=width>{label}</div> }
+    }
+
+    #[test]
+    #[should_panic(expected = r#"story "Demo/Widget" already has a description"#)]
+    fn a_story_with_a_doc_comment_takes_no_second_description() {
+        Owner::new().with(|| {
+            let _ = widget().with_description("again");
+        });
     }
 
     #[test]

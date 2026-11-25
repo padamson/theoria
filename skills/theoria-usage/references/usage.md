@@ -3,6 +3,13 @@
 - `Story::new(name: &'static str, view_fn: F) -> Story` where `F: Fn() ->
   V + Send + Sync + 'static, V: IntoView`: a plain story with no args. A
   `/` in `name` nests it in the sidebar.
+- `.with_description(md: &'static str)` on a `Story` gives it a Markdown
+  description, which the docs panel shows and the sidebar marks. A
+  `#[story]` function's doc comment is its description, so this is for a
+  story built with `Story::new`. The text is Markdown as written, so a
+  line indented four spaces inside the literal is a code block. A second
+  description (including one on a `#[story]` story with a doc comment)
+  or blank text panics when the story is built.
 - `#[story(name = "Group/Name", arg = default, ...)]` on `fn x(arg: T,
   ...) -> impl IntoView`: generates `fn x() -> Story` with one control per
   parameter. `T` is `bool`, `f64`, `String`, `Bounded`, `Color`, or

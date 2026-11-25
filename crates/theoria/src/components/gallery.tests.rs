@@ -106,13 +106,7 @@ fn only_stories_with_a_description_get_a_nav_docs_badge() {
     let html = leptotes::render(move || {
         let stories = vec![
             Story::new("Alpha", || view! { <p>"alpha-body"</p> }),
-            Story::__from_macro(
-                "Beta",
-                || view! { <p>"beta-body"</p> }.into_any(),
-                Vec::new(),
-                "view! { <Beta /> }",
-                Some("A beta story."),
-            ),
+            Story::new("Beta", || view! { <p>"beta-body"</p> }).with_description("A beta story."),
         ];
         view! { <Gallery stories=stories /> }
     });
@@ -120,5 +114,31 @@ fn only_stories_with_a_description_get_a_nav_docs_badge() {
         leptotes::count(&html, "theoria-docs-badge"),
         1,
         "only Beta (with a description) gets the nav badge"
+    );
+}
+
+fn described() -> Vec<Story> {
+    first()
+        .map(|story| story.with_description("Why it is **here**."))
+        .collect()
+}
+
+#[test]
+fn a_story_built_by_hand_shows_its_description_as_markdown() {
+    let html = gallery_of(described());
+    assert_eq!(
+        leptotes::count(&html, "<strong>here</strong>"),
+        1,
+        "the description renders in the panel; got:\n{html}"
+    );
+}
+
+#[test]
+fn a_story_built_by_hand_with_a_description_gets_the_nav_docs_badge() {
+    let html = gallery_of(described());
+    assert_eq!(
+        leptotes::count(&html, "theoria-docs-badge"),
+        1,
+        "got:\n{html}"
     );
 }

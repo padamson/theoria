@@ -35,6 +35,10 @@ fn yard(yard_w: f64, yard_d: f64) -> impl IntoView {
 }
 ```
 
+The doc comment is the story's description, which the gallery's docs panel
+shows as Markdown. A story built by hand gets one from
+`.with_description("...")`.
+
 A parameter typed `Signal<T>`, over any type an arg can have, gets the arg's
 signal instead of its value, and an edit to it redraws only what reads the
 signal. An edit to a plain parameter runs the whole body again, so a story
