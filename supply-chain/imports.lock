@@ -64,6 +64,13 @@ user-id = 3618
 user-login = "dtolnay"
 user-name = "David Tolnay"
 
+[[publisher.bitflags]]
+version = "2.13.2"
+when = "2026-09-10"
+user-id = 3204
+user-login = "KodrAus"
+user-name = "Ashley Mannix"
+
 [[publisher.bumpalo]]
 version = "3.20.3"
 when = "2026-05-22"
@@ -551,6 +558,13 @@ when = "2026-10-29"
 user-id = 4484
 user-login = "hsivonen"
 user-name = "Henri Sivonen"
+
+[[publisher.uuid]]
+version = "1.29.2"
+when = "2026-11-09"
+user-id = 3204
+user-login = "KodrAus"
+user-name = "Ashley Mannix"
 
 [[publisher.walkdir]]
 version = "2.5.0"
