@@ -36,10 +36,32 @@ pub fn StoryNav(
     }
 }
 
-/// Whether a click is one the gallery takes, rather than one the browser gives
-/// another meaning (a new tab or window).
-fn is_plain_click(ev: &MouseEvent) -> bool {
-    !(ev.ctrl_key() || ev.meta_key() || ev.shift_key() || ev.alt_key())
+/// The modifier keys held during a click.
+// Four independent flags, as the DOM reports them, not states an enum would name.
+#[allow(clippy::struct_excessive_bools)]
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Modifiers {
+    pub(crate) ctrl: bool,
+    pub(crate) meta: bool,
+    pub(crate) shift: bool,
+    pub(crate) alt: bool,
+}
+
+impl Modifiers {
+    fn of(ev: &MouseEvent) -> Self {
+        Self {
+            ctrl: ev.ctrl_key(),
+            meta: ev.meta_key(),
+            shift: ev.shift_key(),
+            alt: ev.alt_key(),
+        }
+    }
+
+    /// Whether a click with these keys is one the gallery takes, rather than
+    /// one the browser gives another meaning (a new tab or window).
+    pub(crate) fn is_plain(self) -> bool {
+        !(self.ctrl || self.meta || self.shift || self.alt)
+    }
 }
 
 /// What every leaf of the tree reads.
@@ -151,7 +173,7 @@ fn render_nodes(nodes: Vec<NavNode>, leaves: &Leaves, depth: usize) -> Vec<AnyVi
                             aria-current=move || (selected.get() == Some(index)).then_some("page")
                             style=indent(depth)
                             on:click=move |ev: MouseEvent| {
-                                if is_plain_click(&ev) {
+                                if Modifiers::of(&ev).is_plain() {
                                     ev.prevent_default();
                                     set_selected.set(Some(index));
                                 }

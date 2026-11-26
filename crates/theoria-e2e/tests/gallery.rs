@@ -1296,12 +1296,10 @@ async fn a_click_with_a_modifier_key_leaves_the_selection() -> Result<()> {
     with_site(async |page: &Page, site: &Site| {
         open(page, &site.story("StoryNav/Flat/Three")).await?;
         expect_marked(page, "StoryNav/Flat/Three").await?;
-        // Alt is left out: Chromium downloads the link on an Alt-click.
-        for modifier in [
-            KeyboardModifier::Shift,
-            KeyboardModifier::Meta,
-            KeyboardModifier::Control,
-        ] {
+        // Alt is left out because Chromium downloads the link on an Alt-click,
+        // and Meta because CI's Linux Chromium delivers a Meta-click as a plain
+        // one. `Modifiers::is_plain`'s unit tests cover both keys.
+        for modifier in [KeyboardModifier::Shift, KeyboardModifier::Control] {
             let click = ClickOptions::builder().modifiers(vec![modifier]).build();
             link(page, "StoryNav/Flat/Single")
                 .click(Some(click))

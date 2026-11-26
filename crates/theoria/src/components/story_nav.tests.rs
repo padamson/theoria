@@ -5,7 +5,7 @@ use leptos::prelude::*;
 
 use super::StoryNav;
 use super::gallery::story_href;
-use super::story_nav::{NavNode, build_tree};
+use super::story_nav::{Modifiers, NavNode, build_tree};
 
 fn nav(names: Vec<&'static str>, selected: Option<usize>) -> String {
     leptotes::render(move || {
@@ -171,4 +171,28 @@ fn build_tree_nests_deeply() {
             }],
         }]
     );
+}
+
+#[test]
+fn a_click_with_no_modifier_is_plain() {
+    assert!(Modifiers::default().is_plain());
+}
+
+#[test]
+fn a_click_with_any_one_modifier_is_not_plain() {
+    let none = Modifiers::default();
+    for (key, held) in [
+        ("ctrl", Modifiers { ctrl: true, ..none }),
+        ("meta", Modifiers { meta: true, ..none }),
+        (
+            "shift",
+            Modifiers {
+                shift: true,
+                ..none
+            },
+        ),
+        ("alt", Modifiers { alt: true, ..none }),
+    ] {
+        assert!(!held.is_plain(), "a {key}-click counted as plain");
+    }
 }
