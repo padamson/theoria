@@ -14,7 +14,10 @@ test. Stories are not tests. They are for a person looking at the component.
 3. Write the component and its CSS until those tests pass.
 4. Write the stories. Give each state a visitor can arrive at its own story,
    and add a playground with one control per input. Pick each control by
-   its parameter's type (`references/usage.md`).
+   its parameter's type (`references/usage.md`). Test a playground's
+   wiring (which arg feeds which input) with leptotes, through
+   `story.view()`, in a build that compiles the stories
+   (`references/usage.md`).
 5. Hand the gallery to a person. A session can run `theoria serve` but
    cannot see the result, so this step ends by naming the stories to open
    and what a pass looks like in each.

@@ -54,6 +54,28 @@
   parameter's type as written (`ty()`, shown beside the name in the
   panel, so `Signal<f64>` reads as that), and its `control()`. Each
   control sits under its arg's name and type, as wide as the panel.
+- `story.view()` draws the story's body with its args' current values,
+  inside the reactive owner a leptotes `render` closure gives it. To test
+  what an arg feeds, build the story in the closure, set the arg through
+  its control, and return `story.view()`:
+
+  ```rust
+  let html = leptotes::render(|| {
+      let story = swatch();
+      let ArgControl::Color(ink) = story.arg("ink").unwrap().control() else {
+          panic!("`ink` did not get the color control");
+      };
+      ink.set(Color::from("rebeccapurple"));
+      story.view()
+  });
+  ```
+
+  `story.arg(name)` is `None` for a name the story has no arg for. The
+  body needs no split into a function of its own for the test to reach
+  it. The test compiles only where the story does: put the stories module
+  under `#[cfg(any(test, feature = "stories"))]` and list theoria in
+  `[dev-dependencies]` as well as the optional dependency, or run the
+  tests with `--features stories` in the hook and in CI.
 - `theoria.toml`, `[gallery]` table: `crate` (package name), `path` (to
   the crate, relative to the config file), `aggregator` (path of the fn
   returning `Stories`), and `features` (`csr` is added). An unknown key

@@ -70,5 +70,4 @@ quick and the rest of the stage keeps its state.
   so what a value arg loses on an edit is the body's own state, not the DOM.
   The e2e test checks a count the story keeps.
 - Building a playground over a struct (one control per field, groups, the
-  value as code to copy, a reset) is a separate story, to be written once
-  pyle has used these controls.
+  value as code to copy, a reset) is [T18](T18-struct-playgrounds.md).

@@ -22,8 +22,8 @@ use proc_macro2::{Delimiter, TokenStream as TokenStream2, TokenTree};
 use quote::{ToTokens, format_ident, quote, quote_spanned};
 use std::collections::{HashMap, HashSet};
 use syn::{
-    Expr, FnArg, ItemFn, Lit, Meta, Pat, Token, Type, parse::Parser, punctuated::Punctuated,
-    spanned::Spanned,
+    Expr, FnArg, Ident, ItemFn, Lit, Meta, Pat, Token, Type, ext::IdentExt, parse::Parser,
+    punctuated::Punctuated, spanned::Spanned,
 };
 
 #[proc_macro_attribute]
@@ -54,7 +54,10 @@ fn story_impl(attr: TokenStream2, item: TokenStream2) -> TokenStream2 {
             return syn::Error::new_spanned(meta, "a #[story] entry is written `key = value`")
                 .to_compile_error();
         };
-        let key = nv.path.to_token_stream().to_string();
+        let key = nv
+            .path
+            .get_ident()
+            .map_or_else(|| nv.path.to_token_stream().to_string(), arg_name);
         if key == "name" {
             name_override = Some(nv.value);
         } else if params.contains(&key) {
@@ -119,7 +122,11 @@ fn param_name(input: &FnArg) -> Option<String> {
     let Pat::Ident(pi) = &*pt.pat else {
         return None;
     };
-    Some(pi.ident.to_string())
+    Some(arg_name(&pi.ident))
+}
+
+fn arg_name(ident: &Ident) -> String {
+    ident.unraw().to_string()
 }
 
 /// What one story parameter adds to the generated constructor.
@@ -147,7 +154,7 @@ fn story_arg(input: &FnArg, defaults: &HashMap<String, Expr>) -> syn::Result<Arg
     };
     let ident = &pi.ident;
     let mutability = &pi.mutability;
-    let name = ident.to_string();
+    let name = arg_name(ident);
     if name == "name" {
         return Err(syn::Error::new_spanned(
             ident,
@@ -421,6 +428,20 @@ mod tests {
     #[test]
     fn a_name_in_the_attribute_is_not_taken_for_a_stray_default() {
         let out = expand(quote!(name = "Demo/Width"), &quote!(width: f64));
+        assert!(!out.contains("compile_error"), "got: {out}");
+    }
+
+    #[test]
+    fn a_raw_identifier_parameter_is_named_without_its_prefix() {
+        assert_eq!(
+            param_name(&syn::parse_quote!(r#type: String)).as_deref(),
+            Some("type")
+        );
+    }
+
+    #[test]
+    fn a_default_keyed_by_a_raw_identifier_is_accepted() {
+        let out = expand(quote!(r#type = "button"), &quote!(r#type: String));
         assert!(!out.contains("compile_error"), "got: {out}");
     }
 

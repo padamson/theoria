@@ -502,7 +502,7 @@ pub struct Story {
     name: &'static str,
     // `Send + Sync`: Leptos 0.8's reactive closures (the stage re-renders when
     // the selection changes) require their captures to be thread-safe.
-    view: Box<dyn Fn() -> AnyView + Send + Sync>,
+    body: Box<dyn Fn() -> AnyView + Send + Sync>,
     /// Editable args ("knobs"), in declaration order. Empty for plain stories.
     args: Vec<Arg>,
     /// The story body source, for "show code".
@@ -530,7 +530,7 @@ impl Story {
     {
         Self {
             name,
-            view: Box::new(move || view_fn().into_any()),
+            body: Box::new(move || view_fn().into_any()),
             args: Vec::new(),
             source: None,
             description: None,
@@ -552,7 +552,7 @@ impl Story {
     {
         Self {
             name,
-            view: Box::new(view_fn),
+            body: Box::new(view_fn),
             args,
             source: Some(source),
             description,
@@ -598,10 +598,45 @@ impl Story {
         self.name
     }
 
+    /// The story's body, drawn with its args' current values. Call it inside
+    /// a reactive `Owner`, such as the one a leptotes `render` closure runs
+    /// in. A test can set an arg and draw the story, to check what the arg
+    /// feeds:
+    ///
+    /// ```
+    /// use leptos::prelude::*;
+    /// use theoria::{ArgControl, Color, story};
+    ///
+    /// #[story(ink = "#243832")]
+    /// fn swatch(ink: Signal<Color>) -> impl IntoView {
+    ///     view! { <p style:color=move || ink.get().to_string()>"Ink"</p> }
+    /// }
+    ///
+    /// let html = leptotes::render(|| {
+    ///     let story = swatch();
+    ///     let ArgControl::Color(ink) = story.arg("ink").unwrap().control() else {
+    ///         panic!("`ink` did not get the color control");
+    ///     };
+    ///     ink.set(Color::from("rebeccapurple"));
+    ///     story.view()
+    /// });
+    /// assert!(html.contains("color:rebeccapurple"), "got: {html}");
+    /// ```
+    #[must_use]
+    pub fn view(&self) -> AnyView {
+        (self.body)()
+    }
+
     /// The editable args ("knobs"), in declaration order.
     #[must_use]
     pub fn args(&self) -> &[Arg] {
         &self.args
+    }
+
+    /// The arg called `name`, if the story has one.
+    #[must_use]
+    pub fn arg(&self, name: &str) -> Option<Arg> {
+        self.args.iter().find(|arg| arg.name == name).copied()
     }
 
     /// The captured body source, if any (for "show code").
@@ -696,6 +731,12 @@ mod story_tests {
     #[should_panic(expected = r#"story "A" has a blank description"#)]
     fn a_blank_description_panics() {
         let _ = Story::new("A", || "a").with_description(" \n");
+    }
+
+    #[test]
+    fn view_draws_the_story_body() {
+        let html = leptotes::render(|| Story::new("A", || view! { <p>"hi"</p> }).view());
+        assert!(html.contains("<p>hi</p>"), "got: {html}");
     }
 }
 
@@ -804,14 +845,10 @@ mod story_macro_tests {
     }
 
     fn arg(story: &Story, name: &str) -> Arg {
-        *story
-            .args()
-            .iter()
-            .find(|arg| arg.name() == name)
-            .unwrap_or_else(|| {
-                let names: Vec<_> = story.args().iter().map(Arg::name).collect();
-                panic!("no arg named `{name}`; args: {names:?}")
-            })
+        story.arg(name).unwrap_or_else(|| {
+            let names: Vec<_> = story.args().iter().map(Arg::name).collect();
+            panic!("no arg named `{name}`; args: {names:?}")
+        })
     }
 
     fn width_control(story: &Story) -> RwSignal<f64> {
@@ -827,7 +864,7 @@ mod story_macro_tests {
     /// the view only if the view read the arg.
     fn edit_the_arg_on_a_live_stage(story: Story) {
         let width = width_control(&story);
-        let stage = Memo::new(move |_| drop((story.view)()));
+        let stage = Memo::new(move |_| drop(story.view()));
         stage.get();
         width.set(2.0);
         stage.get();
@@ -850,7 +887,7 @@ mod story_macro_tests {
         Owner::new().with(|| {
             let story = width_handed_over();
             let width = width_control(&story);
-            drop((story.view)());
+            drop(story.view());
             width.set(2.0);
             let handed_over = HANDED_OVER.lock().unwrap().expect("the body ran");
             assert_eq!(handed_over.get_untracked(), 2.0);
@@ -863,8 +900,8 @@ mod story_macro_tests {
     fn a_signal_arg_is_the_same_signal_on_every_run() {
         Owner::new().with(|| {
             let story = width_handed_over_per_run();
-            drop((story.view)());
-            drop((story.view)());
+            drop(story.view());
+            drop(story.view());
             let runs = HANDED_OVER_PER_RUN.lock().unwrap();
             assert_eq!(runs.len(), 2, "the body ran twice");
             assert!(runs[0] == runs[1], "each run got its own signal");
@@ -897,7 +934,7 @@ mod story_macro_tests {
     #[test]
     fn a_choice_arg_starts_at_the_option_its_attribute_selects() {
         Owner::new().with(|| {
-            let html = (build().view)().to_html();
+            let html = build().view().to_html();
             assert!(html.contains(">0.13.0<"), "got: {html}");
         });
     }
@@ -907,7 +944,7 @@ mod story_macro_tests {
         Owner::new().with(|| {
             let story = build();
             choice_control(&story, "build").select(2);
-            let html = (story.view)().to_html();
+            let html = story.view().to_html();
             assert!(html.contains(">0.14.0<"), "got: {html}");
         });
     }
@@ -926,7 +963,7 @@ mod story_macro_tests {
         Owner::new().with(|| {
             let story = build();
             choice_control(&story, "build").select(3);
-            let html = (story.view)().to_html();
+            let html = story.view().to_html();
             assert!(html.contains(">0.13.0<"), "got: {html}");
         });
     }
@@ -944,7 +981,7 @@ mod story_macro_tests {
         Owner::new().with(|| {
             let story = build_counted();
             let control = choice_control(&story, "build");
-            let stage = Memo::new(move |_| drop((story.view)()));
+            let stage = Memo::new(move |_| drop(story.view()));
             stage.get();
             control.select(1);
             stage.get();
@@ -965,7 +1002,7 @@ mod story_macro_tests {
         Owner::new().with(|| {
             let story = build_counted_again();
             let control = choice_control(&story, "build");
-            let stage = Memo::new(move |_| drop((story.view)()));
+            let stage = Memo::new(move |_| drop(story.view()));
             stage.get();
             control.select(0);
             stage.get();
@@ -993,6 +1030,32 @@ mod story_macro_tests {
         struct HasDefault;
         impl<T: Default> NoDefault<HasDefault> for T {}
         <Choice<&'static str> as NoDefault<_>>::check();
+    }
+
+    #[test]
+    fn arg_finds_an_arg_by_its_name() {
+        Owner::new().with(|| {
+            assert_eq!(widget().arg("width").map(|arg| arg.ty()), Some("f64"));
+        });
+    }
+
+    #[story(r#type = "button")]
+    fn raw_named(r#type: String) -> impl IntoView {
+        view! { <p>{r#type}</p> }
+    }
+
+    #[test]
+    fn an_arg_written_as_a_raw_identifier_is_found_by_its_plain_name() {
+        Owner::new().with(|| {
+            assert_eq!(raw_named().arg("type").map(|arg| arg.ty()), Some("String"));
+        });
+    }
+
+    #[test]
+    fn arg_is_none_for_a_name_the_story_lacks() {
+        Owner::new().with(|| {
+            assert_eq!(widget().arg("height").map(|arg| arg.ty()), None);
+        });
     }
 
     #[test]
@@ -1035,7 +1098,7 @@ mod story_macro_tests {
 
     #[test]
     fn a_mut_parameter_is_mutable_in_the_body() {
-        let html = leptotes::render(|| (shouts().view)());
+        let html = leptotes::render(|| shouts().view());
         assert!(html.contains("hi!"), "got:\n{html}");
     }
 

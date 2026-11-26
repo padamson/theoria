@@ -48,7 +48,7 @@ pub(crate) fn gallery_opened_at(stories: Vec<Story>, opened: Opening) -> impl In
     let stories = StoredValue::new(stories);
 
     let stage = move || match selected.get() {
-        Some(index) => stories.with_value(|s| s.get(index).map(|st| (st.view)())),
+        Some(index) => stories.with_value(|s| s.get(index).map(Story::view)),
         None => missing.as_ref().map(|name| {
             view! { <p class="theoria-missing">{format!("No story named \"{name}\"")}</p> }
                 .into_any()
