@@ -72,6 +72,19 @@
   two things. Found for `Stories`: the crate's `csr` does not enable
   theoria's. Found for a `Vec`: the aggregator returns `Vec<Story>`, not
   `Stories`.
+- A story's URL is the gallery's with `?story=` and the story's full name,
+  form-encoded but with each `/` left as it is
+  (`?story=Version+bar/Playground`). It opens that story
+  over the one stored in `localStorage`; with no `story` in the URL the
+  stored story opens, else the first. A name no story has is reported on
+  the stage, with nothing marked in the sidebar. Selecting a story
+  rewrites the URL without a history entry, and each sidebar entry is an
+  `<a>` linking to its story's URL, marked `aria-current="page"` when its
+  story is on the stage. A browser test opens a story by building that
+  URL with `form_urlencoded::byte_serialize`, never by clicking its label,
+  which another story in a different group may share. The gallery reads a
+  `/` written as `%2F` too; to compare an `href` or the address with what
+  the gallery writes, add `.replace("%2F", "/")`.
 - `theoria serve [--port 8081]`, `theoria build`, `theoria generate`, each
   with `--config <file>` (default `theoria.toml`). A config change needs a
   re-run of `serve`.

@@ -126,6 +126,15 @@ cargo theoria serve    # http://localhost:8081, rebuilt on every source edit
 cargo theoria build    # a static gallery under target/theoria/gallery
 ```
 
+The address bar names the story on screen: `?story=` and the story's full
+name, form-encoded but with each `/` left as it is, so `Buttons/Primary
+large` is `http://localhost:8081/?story=Buttons/Primary+large`. Each sidebar
+entry links to its story, and the bare URL opens the story you had open
+last. A browser test opens a story the same way, building the query with
+`form_urlencoded::byte_serialize`; the gallery reads a `/` written as `%2F`
+too, so that alone opens the story, and `.replace("%2F", "/")` after it
+gives the exact `href` and address the gallery writes.
+
 A package of its own, rather than an example in your components' crate,
 builds none of your components natively just to start the CLI, and keeps
 the CLI out of their test builds.

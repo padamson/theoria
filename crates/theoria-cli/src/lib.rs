@@ -297,18 +297,19 @@ const GALLERY_INDEX_HTML: &str = r#"<!DOCTYPE html>
       .theoria-nav ul { list-style: none; margin: 0; padding: 0; }
       .theoria-nav ul.collapsed { display: none; }
       /* Leaf rows: flat, full-width, subtle hover; the selected one is accented. */
-      .theoria-nav button { display: flex; align-items: center; width: 100%; text-align: left; padding: 4px 8px; margin: 1px 0; border: none; border-radius: 6px; background: none; color: inherit; cursor: pointer; font: inherit; font-size: 13px; }
-      .theoria-nav button:hover { background: #efe9dc; }
-      .theoria-nav button.active { background: #5c6b4f; color: #fff; }
+      .theoria-nav a { display: flex; align-items: center; box-sizing: border-box; width: 100%; padding: 4px 8px; margin: 1px 0; border-radius: 6px; color: inherit; text-decoration: none; font-size: 13px; }
+      .theoria-nav a:hover { background: #efe9dc; }
+      .theoria-nav a[aria-current=page] { background: #5c6b4f; color: #fff; }
       /* Marks a leaf with a docs panel (description/args/show-code) — most
          plain stories have none, so this is the only way to tell from the list. */
       .theoria-docs-badge { margin-left: 8px; flex: 0 0 auto; color: #b3ab9a; }
-      .theoria-nav button.active .theoria-docs-badge { color: #cfe0c4; }
+      .theoria-nav a[aria-current=page] .theoria-docs-badge { color: #cfe0c4; }
       /* Group headers: muted, uppercase, click to collapse. */
       .theoria-group-label { padding: 8px 8px 2px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: #8a8275; cursor: pointer; user-select: none; }
       .theoria-group-label:hover { color: #5c6b4f; }
       .theoria-group-label .caret { font-size: 9px; color: #b3ab9a; }
       .theoria-stage { flex: 1 1 auto; background: #fff; border: 1px solid #e3dccb; border-radius: 12px; padding: 16px; min-height: 200px; overflow: auto; height: 100%; box-sizing: border-box; }
+      .theoria-missing { margin: 0; color: #8a8275; }
       /* Right-hand panel: Markdown description, controls, and show-code. */
       .theoria-panel { flex: 0 0 280px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; height: 100%; box-sizing: border-box; }
       .theoria-md { font-size: 13px; line-height: 1.55; color: #4a463d; }

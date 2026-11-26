@@ -53,13 +53,13 @@ Backlog priority tiers (and Rust/Leptos difficulty + rationale) come from the
 | T16 | **Show code** — render the source the `#[story]` macro captured | ✅ done |
 | T13 | **Autodocs** — per-component page: Markdown description + args table + controls + live story + show-code | ✅ done |
 | T17 | **Typed controls**: args as signals, bounded numbers, color, choice | ✅ done ([T17](T17-typed-controls.md)) |
+| T14 | **A URL for each story**: `?story=<full name>` opens it; e2e drives stories by URL | T14.0 done ([T14](T14-deep-linking.md)) |
 
 **Backlog** (pull when an slp slice needs it)
 
 | # | Story | Tier |
 |---|---|---|
 | T10 | **Actions** — log a component's callbacks + args to a panel | 1 |
-| T14 | Deep-linking — per-story URL (share/bookmark; drive e2e by URL) | 2 |
 | T11 | a11y — run axe-core against each story in the e2e | 2 |
 | T12 | Globals/toolbar — theme switch all stories read | 2 |
 | T7 | Viewport + backgrounds (stage size / bg presets) | 3 |

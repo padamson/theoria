@@ -644,7 +644,7 @@ impl Stories {
     ///
     /// It is behind `csr` so that a stories crate whose `csr` feature does
     /// not enable theoria's fails to build, where it would otherwise run
-    /// without the `localStorage` that keeps the selected story.
+    /// without the URL and `localStorage` code that keep the selected story.
     #[cfg(feature = "csr")]
     pub fn mount(self) {
         console_error_panic_hook::set_once();

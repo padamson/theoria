@@ -3,6 +3,7 @@
 use leptos::prelude::*;
 
 use super::Gallery;
+use super::gallery::{Opening, gallery_opened_at, opening, story_href, story_in, with_story};
 use crate::{Arg, ArgControl, Stories, Story};
 
 fn alpha_beta() -> Vec<Story> {
@@ -139,6 +140,138 @@ fn a_story_built_by_hand_with_a_description_gets_the_nav_docs_badge() {
     assert_eq!(
         leptotes::count(&html, "theoria-docs-badge"),
         1,
+        "got:\n{html}"
+    );
+}
+
+#[test]
+fn a_storys_href_reads_back_as_its_name() {
+    for name in [
+        "Version bar/Playground",
+        "Knobs · demo",
+        "a&b=c",
+        "1+1",
+        "100%",
+        "#top",
+        "a%2Fb",
+    ] {
+        assert_eq!(
+            story_in(&story_href(name)).as_deref(),
+            Some(name),
+            "through {:?}",
+            story_href(name)
+        );
+    }
+}
+
+#[test]
+fn a_query_without_story_names_none() {
+    assert_eq!((story_in(""), story_in("?other=Alpha")), (None, None));
+}
+
+#[test]
+fn an_empty_story_names_none() {
+    assert_eq!(story_in("?story="), None);
+}
+
+#[test]
+fn with_story_replaces_the_story_and_keeps_the_rest() {
+    assert_eq!(
+        with_story("?theme=dark&story=Alpha&zoom=2", "Beta"),
+        "?theme=dark&zoom=2&story=Beta"
+    );
+}
+
+#[test]
+fn with_story_adds_the_story_after_the_rest() {
+    assert_eq!(with_story("?theme=dark", "Beta"), "?theme=dark&story=Beta");
+}
+
+#[test]
+fn a_slash_written_as_2f_reads_as_a_slash() {
+    assert_eq!(
+        story_in("?story=Version+bar%2FPlayground").as_deref(),
+        Some("Version bar/Playground")
+    );
+}
+
+#[test]
+fn story_is_read_beside_other_parameters() {
+    assert_eq!(story_in("?other=1&story=Alpha").as_deref(), Some("Alpha"));
+}
+
+const NAMES: [&str; 2] = ["Alpha", "Beta"];
+
+#[test]
+fn a_url_naming_a_story_opens_it_over_the_stored_one() {
+    assert_eq!(
+        opening(&NAMES, Some("Beta"), Some("Alpha")),
+        Opening::Story(1)
+    );
+}
+
+#[test]
+fn a_url_naming_no_story_opens_none_and_names_what_it_asked_for() {
+    assert_eq!(
+        opening(&NAMES, Some("Gamma"), Some("Alpha")),
+        Opening::NoSuchStory("Gamma".into())
+    );
+}
+
+#[test]
+fn a_bare_url_opens_the_stored_story() {
+    assert_eq!(opening(&NAMES, None, Some("Beta")), Opening::Story(1));
+}
+
+#[test]
+fn a_bare_url_opens_the_first_story_when_the_stored_one_is_gone() {
+    assert_eq!(opening(&NAMES, None, Some("Gamma")), Opening::Story(0));
+}
+
+#[test]
+fn a_bare_url_opens_the_first_story_when_nothing_is_stored() {
+    assert_eq!(opening(&NAMES, None, None), Opening::Story(0));
+}
+
+fn opened_at(opened: Opening) -> String {
+    leptotes::render(move || gallery_opened_at(alpha_beta(), opened))
+}
+
+#[test]
+fn a_gallery_opened_at_a_story_shows_it() {
+    let html = opened_at(Opening::Story(1));
+    assert_eq!(
+        (
+            leptotes::count(&html, "beta-body"),
+            leptotes::count(&html, "alpha-body")
+        ),
+        (1, 0),
+        "got:\n{html}"
+    );
+}
+
+#[test]
+fn a_gallery_opened_at_no_such_story_names_it_on_the_stage() {
+    let html = opened_at(Opening::NoSuchStory("Gamma".into()));
+    assert_eq!(
+        leptotes::count(
+            &html,
+            r#"<p class="theoria-missing">No story named "Gamma"</p>"#
+        ),
+        1,
+        "got:\n{html}"
+    );
+}
+
+#[test]
+fn a_gallery_opened_at_no_such_story_marks_nothing_and_shows_no_panel() {
+    let html = opened_at(Opening::NoSuchStory("Gamma".into()));
+    assert_eq!(
+        (
+            leptotes::count(&html, "aria-current"),
+            leptotes::count(&html, "theoria-panel")
+        ),
+        (0, 0),
         "got:\n{html}"
     );
 }

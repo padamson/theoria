@@ -1,28 +1,53 @@
 //! The sidebar: a tree of story names. A story name is a `/`-delimited path
-//! (e.g. `"Structures/House/Outline"`); the leaf is the clickable story and the
+//! (e.g. `"Structures/House/Outline"`); the leaf links to the story and the
 //! ancestors become groups. Flat names (no `/`) render as top-level leaves, so
-//! the sidebar is backward-compatible. The selected leaf is marked `active`.
+//! the sidebar is backward-compatible.
 
+use leptos::ev::MouseEvent;
 use leptos::prelude::*;
 
+use super::gallery::story_href;
+
+/// The gallery's sidebar; each leaf links to its story's gallery URL
+/// (`?story=<name>`).
 #[allow(clippy::needless_pass_by_value)]
 #[component]
 pub fn StoryNav(
     names: Vec<&'static str>,
-    selected: ReadSignal<usize>,
-    set_selected: WriteSignal<usize>,
+    selected: ReadSignal<Option<usize>>,
+    set_selected: WriteSignal<Option<usize>>,
     /// Whether each story (by the same index as `names`) has a Markdown
     /// description — those get a small marker in the sidebar, since most of
     /// a gallery's stories otherwise look identical from the list alone.
     #[prop(default = Vec::new())]
     has_docs: Vec<bool>,
 ) -> impl IntoView {
-    let tree = build_tree(names);
+    let tree = build_tree(names.clone());
+    let leaves = Leaves {
+        names: &names,
+        has_docs: &has_docs,
+        selected,
+        set_selected,
+    };
     view! {
         <nav class="theoria-nav">
-            <ul>{render_nodes(tree, selected, set_selected, &has_docs, 0)}</ul>
+            <ul>{render_nodes(tree, &leaves, 0)}</ul>
         </nav>
     }
+}
+
+/// Whether a click is one the gallery takes, rather than one the browser gives
+/// another meaning (a new tab or window).
+fn is_plain_click(ev: &MouseEvent) -> bool {
+    !(ev.ctrl_key() || ev.meta_key() || ev.shift_key() || ev.alt_key())
+}
+
+/// What every leaf of the tree reads.
+struct Leaves<'a> {
+    names: &'a [&'static str],
+    has_docs: &'a [bool],
+    selected: ReadSignal<Option<usize>>,
+    set_selected: WriteSignal<Option<usize>>,
 }
 
 /// A node in the sidebar tree: a named `Group` of children, or a `Leaf` that
@@ -91,13 +116,7 @@ fn insert(level: &mut Vec<NavNode>, segs: &[&str], index: usize) {
 
 /// Render a level of the tree (recursively) into list items. Returns a concrete
 /// `Vec<AnyView>` so the recursion has a finite type.
-fn render_nodes(
-    nodes: Vec<NavNode>,
-    selected: ReadSignal<usize>,
-    set_selected: WriteSignal<usize>,
-    has_docs: &[bool],
-    depth: usize,
-) -> Vec<AnyView> {
+fn render_nodes(nodes: Vec<NavNode>, leaves: &Leaves, depth: usize) -> Vec<AnyView> {
     let indent = |d: usize| format!("padding-left: {}px", 8 + d * 12);
     nodes
         .into_iter()
@@ -105,7 +124,7 @@ fn render_nodes(
             NavNode::Leaf { label, index } => {
                 // A small page-with-folded-corner glyph — the conventional
                 // "docs" mark — for a leaf whose panel has a description.
-                let docs_badge = has_docs.get(index).copied().unwrap_or(false).then(|| {
+                let docs_badge = leaves.has_docs.get(index).copied().unwrap_or(false).then(|| {
                     view! {
                         <svg
                             class="theoria-docs-badge"
@@ -124,22 +143,29 @@ fn render_nodes(
                         </svg>
                     }
                 });
+                let (selected, set_selected) = (leaves.selected, leaves.set_selected);
                 view! {
                     <li>
-                        <button
-                            class:active=move || selected.get() == index
+                        <a
+                            href=story_href(leaves.names[index])
+                            aria-current=move || (selected.get() == Some(index)).then_some("page")
                             style=indent(depth)
-                            on:click=move |_| set_selected.set(index)
+                            on:click=move |ev: MouseEvent| {
+                                if is_plain_click(&ev) {
+                                    ev.prevent_default();
+                                    set_selected.set(Some(index));
+                                }
+                            }
                         >
                             {label}
                             {docs_badge}
-                        </button>
+                        </a>
                     </li>
                 }
                 .into_any()
             }
             NavNode::Group { label, children } => {
-                let kids = render_nodes(children, selected, set_selected, has_docs, depth + 1);
+                let kids = render_nodes(children, leaves, depth + 1);
                 // Each group is independently collapsible (open by default).
                 let open = RwSignal::new(true);
                 view! {

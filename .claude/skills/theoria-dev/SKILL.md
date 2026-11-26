@@ -17,8 +17,8 @@ gates, and `skills/theoria-usage/` is what a consumer reads.
 - `crates/theoria`: `Story`, `Stories`, `ArgControl`, and the components (`Gallery`,
   `StoryNav`, `Controls`, `ShowCode`, `Markdown`). It enables no Leptos
   runtime of its own. The `csr`, `ssr`, and `hydrate` features pass through
-  to Leptos; `csr` also pulls in `web-sys` for the `localStorage` that keeps
-  the selected story across reloads; a consumer's gallery gets it only when
+  to Leptos; `csr` also pulls in `web-sys` for the URL (`?story=`) and the
+  `localStorage` that keep the selected story across reloads; a consumer's gallery gets it only when
   the stories crate forwards `csr` to theoria. `stories` compiles theoria's own
   stories.
 - `crates/theoria-macros`: `#[story]`. The proc-macro entry point is a thin
@@ -70,8 +70,9 @@ a gallery from `theoria::stories`). Never put a `Gallery` inside a
   `Cargo.lock` is copied in. Its fixtures are workspaces cargo can load
   (`write_workspace`), since `generate` runs `cargo locate-project`, which
   would otherwise look for a workspace above the temp directory.
-- **Browser:** theoria-e2e discovers every story from the sidebar at run
-  time, so a new story is covered without editing the test. Every browser
+- **Browser:** theoria-e2e discovers every story from the sidebar's links at
+  run time and opens each by its URL, so a new story is covered without
+  editing the test. Every browser
   test runs its body through `with_gallery`, which fails when the gallery
   is not built and closes the browser on every path. One test opens no
   browser: it reads the `Cargo.lock` cargo left beside the built gallery
@@ -115,7 +116,7 @@ mount. That holds for theoria's own gallery too, with no special case.
 otherwise), since cargo does not let a dependency entry enable a transitive
 feature. A crate that does not forward it fails the gallery build with
 ``no method named `mount` ``, where it would otherwise run without the
-`localStorage` code. `Trunk.toml` watches the target crate's `src/`, not
+URL and `localStorage` code. `Trunk.toml` watches the target crate's `src/`, not
 the harness, whose `dist/` would loop the rebuild. The variable parts of
 the TOML are built as `toml::Value`s, so a Windows path is escaped, and
 `main` resolves the config with `std::path::absolute`, not `canonicalize`,

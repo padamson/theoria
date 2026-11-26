@@ -22,8 +22,9 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result, ensure};
 use axum::Router;
-use playwright_rs::expect;
+use playwright_rs::protocol::click::KeyboardModifier;
 use playwright_rs::protocol::{Locator, Page, Playwright, SelectOption};
+use playwright_rs::{ClickOptions, expect, expect_page};
 use serde::Deserialize;
 use tower_http::services::ServeDir;
 
@@ -72,9 +73,39 @@ async fn serve(dist: &PathBuf) -> Result<(SocketAddr, tokio::task::JoinHandle<()
     Ok((addr, handle))
 }
 
-/// Run `body` on a page showing the built gallery. Fails when the gallery is
-/// not built, and closes the browser whether or not `body` passed.
-async fn with_gallery(body: impl AsyncFnOnce(&Page) -> Result<()>) -> Result<()> {
+/// Where the built gallery is served.
+struct Site {
+    base: String,
+}
+
+impl Site {
+    /// The gallery's URL followed by `rest`, a query or nothing.
+    fn at(&self, rest: &str) -> String {
+        format!("{}/{rest}", self.base)
+    }
+
+    /// The gallery's URL with no story in it.
+    fn bare(&self) -> String {
+        self.at("")
+    }
+
+    /// The URL that opens the story named `name`.
+    fn story(&self, name: &str) -> String {
+        self.at(&story_query(name))
+    }
+}
+
+/// The query that opens the story named `name`, built from the name as any
+/// test that opens a story by URL builds it.
+fn story_query(name: &str) -> String {
+    let name: String = form_urlencoded::byte_serialize(name.as_bytes()).collect();
+    format!("?story={}", name.replace("%2F", "/"))
+}
+
+/// Run `body` on a new page, with no URL opened yet, beside the built
+/// gallery's address. Fails when the gallery is not built, and closes the
+/// browser whether or not `body` passed.
+async fn with_site(body: impl AsyncFnOnce(&Page, &Site) -> Result<()>) -> Result<()> {
     let dist = dist_dir();
     ensure!(
         dist.join("index.html").exists(),
@@ -83,18 +114,87 @@ async fn with_gallery(body: impl AsyncFnOnce(&Page) -> Result<()>) -> Result<()>
     );
 
     let (addr, _server) = serve(&dist).await?;
+    let site = Site {
+        base: format!("http://{addr}"),
+    };
     let pw = Playwright::launch().await.context("launch playwright")?;
     let browser = pw.chromium().launch().await.context("launch chromium")?;
     let result = async {
         let page = browser.new_page().await.context("new page")?;
-        page.goto(&format!("http://{addr}"), None)
-            .await
-            .context("navigate to gallery")?;
-        body(&page).await
+        body(&page, &site).await
     }
     .await;
     let closed = browser.close().await.context("close browser");
     result.and(closed)
+}
+
+/// Run `body` on a page showing the built gallery at its bare URL.
+async fn with_gallery(body: impl AsyncFnOnce(&Page) -> Result<()>) -> Result<()> {
+    with_site(async |page: &Page, site: &Site| {
+        open(page, &site.bare()).await?;
+        body(page).await
+    })
+    .await
+}
+
+async fn open(page: &Page, url: &str) -> Result<()> {
+    page.goto(url, None)
+        .await
+        .map(drop)
+        .with_context(|| format!("open {url}"))
+}
+
+/// Every story's link in the gallery's own sidebar.
+fn sidebar_links(page: &Page) -> Locator {
+    page.locator(".theoria > .theoria-nav a")
+}
+
+/// The sidebar entry marked as the story on the stage.
+fn current(page: &Page) -> Locator {
+    page.locator(".theoria > .theoria-nav [aria-current=page]")
+}
+
+/// Waits for the sidebar to mark the story named `name`.
+async fn expect_marked(page: &Page, name: &str) -> Result<()> {
+    expect_marked_at(page, &story_query(name)).await
+}
+
+/// Waits for the sidebar to mark the story whose `href` is `query`.
+async fn expect_marked_at(page: &Page, query: &str) -> Result<()> {
+    expect(current(page))
+        .to_have_attribute("href", query)
+        .await
+        .with_context(|| format!("the sidebar marks the story at {query:?}"))
+}
+
+/// The sidebar link to the story named `name`.
+fn link(page: &Page, name: &str) -> Locator {
+    link_to(page, &story_query(name))
+}
+
+/// The sidebar link whose `href` is `query`.
+fn link_to(page: &Page, query: &str) -> Locator {
+    page.locator(format!(r#".theoria > .theoria-nav a[href="{query}"]"#))
+}
+
+/// Selects the story named `name` from the sidebar and waits for it to be marked.
+async fn click_story(page: &Page, name: &str) -> Result<()> {
+    link(page, name)
+        .click(None)
+        .await
+        .with_context(|| format!("click the story {name:?}"))?;
+    expect_marked(page, name).await
+}
+
+/// Waits two animation frames (a second at most), so what a click set off has
+/// been drawn.
+async fn settle(page: &Page) -> Result<()> {
+    page.evaluate::<(), ()>(
+        "() => new Promise(r => { requestAnimationFrame(() => requestAnimationFrame(() => r(null))); setTimeout(() => r(null), 1000); })",
+        None,
+    )
+    .await
+    .context("wait two frames")
 }
 
 async fn select(page: &Page, story: &str) -> Result<()> {
@@ -126,48 +226,60 @@ async fn ensure_fits(locator: &Locator, what: &str) -> Result<()> {
     Ok(())
 }
 
-/// Discover every story from the gallery sidebar and assert each one selects and
-/// renders non-empty content on the stage. Generic over whatever stories the
-/// gallery was built with.
-async fn assert_every_story_renders(page: &Page) -> Result<()> {
-    let buttons = page.locator(".theoria > .theoria-nav button");
-    // `all_inner_texts` does not wait, and the page loads before the app
-    // mounts, so wait for the sidebar or the list reads empty.
-    expect(buttons.first())
+/// The `href` of every story in the sidebar, once the gallery has mounted.
+async fn every_story_query(page: &Page) -> Result<Vec<String>> {
+    let links = sidebar_links(page);
+    // `evaluate_all` does not wait, and the page loads before the app mounts,
+    // so wait for the sidebar or the list reads empty.
+    expect(links.first())
         .to_be_visible()
         .await
         .context("the sidebar lists a story")?;
-    let names = buttons
-        .all_inner_texts()
+    links
+        .evaluate_all(
+            "links => links.map(link => link.getAttribute('href'))",
+            None::<()>,
+        )
         .await
-        .context("read story names from the sidebar")?;
-    ensure!(!names.is_empty(), "gallery lists at least one story");
+        .context("read every story's href")
+}
 
-    for name in &names {
-        page.get_by_text(name, true)
+async fn ensure_the_stage_shows_something(page: &Page, query: &str) -> Result<()> {
+    let stage_children = page
+        .locator(".theoria-stage *")
+        .count()
+        .await
+        .context("count stage content")?;
+    ensure!(
+        stage_children > 0,
+        "the story at {query:?} renders non-empty content"
+    );
+    Ok(())
+}
+
+/// Discover every story from the gallery sidebar and assert each one opens by
+/// its URL and renders non-empty content on the stage. Generic over whatever
+/// stories the gallery was built with.
+async fn assert_every_story_opens_by_its_url(page: &Page, site: &Site) -> Result<()> {
+    open(page, &site.bare()).await?;
+    for query in &every_story_query(page).await? {
+        open(page, &site.at(query)).await?;
+        expect_marked_at(page, query).await?;
+        ensure_the_stage_shows_something(page, query).await?;
+    }
+    Ok(())
+}
+
+/// Select every story from the sidebar in turn, on one page, and assert each
+/// replaces the one before on the stage.
+async fn assert_every_story_selects_from_the_sidebar(page: &Page) -> Result<()> {
+    for query in &every_story_query(page).await? {
+        link_to(page, query)
             .click(None)
             .await
-            .with_context(|| format!("click story {name:?}"))?;
-
-        let active = page
-            .locator(".theoria > .theoria-nav button.active")
-            .inner_text()
-            .await
-            .context("read active story")?;
-        ensure!(
-            active.trim() == name.trim(),
-            "selecting {name:?} should mark it active, but active was {active:?}"
-        );
-
-        let stage_children = page
-            .locator(".theoria-stage *")
-            .count()
-            .await
-            .context("count stage content")?;
-        ensure!(
-            stage_children > 0,
-            "story {name:?} renders non-empty content"
-        );
+            .with_context(|| format!("click {query:?}"))?;
+        expect_marked_at(page, query).await?;
+        ensure_the_stage_shows_something(page, query).await?;
     }
     Ok(())
 }
@@ -204,8 +316,14 @@ fn the_gallery_is_built_from_what_the_workspace_lockfile_records() -> Result<()>
 
 #[tokio::test]
 #[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
-async fn every_story_renders_and_selects() -> Result<()> {
-    with_gallery(assert_every_story_renders).await
+async fn every_story_opens_by_its_url_and_renders() -> Result<()> {
+    with_site(assert_every_story_opens_by_its_url).await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn every_story_selects_from_the_sidebar_and_renders() -> Result<()> {
+    with_gallery(assert_every_story_selects_from_the_sidebar).await
 }
 
 /// The controls panel drives the stage live: editing a knob re-renders the
@@ -1004,30 +1122,211 @@ async fn a_number_control_keeps_a_decimal_typed_key_by_key() -> Result<()> {
     .await
 }
 
-/// The selected story survives a full page reload (persisted to localStorage) —
-/// this is what keeps you on your story across Trunk's hot reload.
+/// What keeps you on your story across Trunk's hot reload.
 #[tokio::test]
 #[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
-async fn selection_persists_across_reload() -> Result<()> {
+async fn a_reload_keeps_the_selected_story() -> Result<()> {
     with_gallery(async |page: &Page| {
-        // Select a non-default story...
-        page.get_by_text("StoryNav · single", false)
-            .click(None)
-            .await
-            .context("select the second story")?;
-        expect(page.locator(".theoria > .theoria-nav button.active"))
-            .to_have_text("StoryNav · single")
-            .await
-            .context("second story is active before reload")?;
-
-        // ...reload the page; the selection is restored from localStorage.
+        click_story(page, "StoryNav/Flat/Single").await?;
         page.reload(None).await.context("reload the page")?;
-        expect(page.locator(".theoria > .theoria-nav button.active"))
-            .to_have_text("StoryNav · single")
-            .await
-            .context("selected story persists across reload")?;
+        expect_marked(page, "StoryNav/Flat/Single").await
+    })
+    .await
+}
 
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_url_opens_its_story_when_another_shares_its_last_segment() -> Result<()> {
+    with_site(async |page: &Page, site: &Site| {
+        open(page, &site.story("StoryNav/Grouped/Single")).await?;
+        expect(page.locator(".theoria-stage [data-testid=fixture-grouped-single]"))
+            .to_have_count(1)
+            .await
+            .context("the stage shows StoryNav/Grouped/Single")
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_url_naming_a_story_wins_over_the_stored_one() -> Result<()> {
+    with_site(async |page: &Page, site: &Site| {
+        open(page, &site.bare()).await?;
+        click_story(page, "StoryNav/Flat/Single").await?;
+        open(page, &site.story("StoryNav/Grouped/Single")).await?;
+        expect_marked(page, "StoryNav/Grouped/Single").await
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_bare_url_opens_the_stored_story() -> Result<()> {
+    with_site(async |page: &Page, site: &Site| {
+        open(page, &site.bare()).await?;
+        click_story(page, "StoryNav/Flat/Single").await?;
+        open(page, &site.bare()).await?;
+        expect_marked(page, "StoryNav/Flat/Single").await
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_bare_url_opens_the_first_story_when_nothing_is_stored() -> Result<()> {
+    with_site(async |page: &Page, site: &Site| {
+        open(page, &site.bare()).await?;
+        let first = sidebar_links(page)
+            .first()
+            .get_attribute("href")
+            .await
+            .context("read the first story's href")?
+            .context("the first sidebar link has an href")?;
+        expect_marked_at(page, &first).await
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_url_naming_no_story_says_so_on_the_stage() -> Result<()> {
+    with_site(async |page: &Page, site: &Site| {
+        open(page, &site.story("Knobs · gone")).await?;
+        expect(page.locator(".theoria-stage .theoria-missing"))
+            .to_contain_text("Knobs · gone")
+            .await
+            .context("the stage names the story the URL asked for")
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_url_naming_no_story_marks_nothing_in_the_sidebar() -> Result<()> {
+    with_site(async |page: &Page, site: &Site| {
+        open(page, &site.story("Knobs · gone")).await?;
+        expect(page.locator(".theoria-stage .theoria-missing"))
+            .to_have_count(1)
+            .await
+            .context("the gallery has mounted")?;
+        expect(current(page))
+            .to_have_count(0)
+            .await
+            .context("no sidebar entry is marked")
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn selecting_a_story_points_the_url_at_it() -> Result<()> {
+    with_site(async |page: &Page, site: &Site| {
+        open(page, &site.bare()).await?;
+        click_story(page, "StoryNav/Grouped/Three").await?;
+        expect_page(page)
+            .to_have_url(&site.story("StoryNav/Grouped/Three"))
+            .await
+            .context("the URL names the selected story")
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn selecting_a_story_adds_no_history_entry() -> Result<()> {
+    with_site(async |page: &Page, site: &Site| {
+        open(page, &site.bare()).await?;
+        expect(current(page))
+            .to_have_count(1)
+            .await
+            .context("the gallery has mounted")?;
+        let history = async || -> Result<u32> {
+            page.evaluate::<(), u32>("() => history.length", None)
+                .await
+                .context("read history.length")
+        };
+        let before = history().await?;
+        click_story(page, "StoryNav/Grouped/Three").await?;
+        click_story(page, "StoryNav/Flat/Single").await?;
+        assert_eq!(
+            history().await?,
+            before,
+            "history.length after two selections"
+        );
         Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_shift_click_opens_the_story_in_a_new_window() -> Result<()> {
+    with_site(async |page: &Page, site: &Site| {
+        open(page, &site.story("StoryNav/Flat/Three")).await?;
+        expect_marked(page, "StoryNav/Flat/Three").await?;
+        let opened = page
+            .context()
+            .context("the page's context")?
+            .expect_page(Some(5_000.0))
+            .await
+            .context("wait for a new page")?;
+        link(page, "StoryNav/Flat/Single")
+            .click(Some(
+                ClickOptions::builder()
+                    .modifiers(vec![KeyboardModifier::Shift])
+                    .build(),
+            ))
+            .await
+            .context("shift-click another story")?;
+        let window = opened
+            .wait()
+            .await
+            .context("the browser opens a new window")?;
+        expect_page(&window)
+            .to_have_url(&site.story("StoryNav/Flat/Single"))
+            .await
+            .context("the new window opens the story")
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_click_with_a_modifier_key_leaves_the_selection() -> Result<()> {
+    with_site(async |page: &Page, site: &Site| {
+        open(page, &site.story("StoryNav/Flat/Three")).await?;
+        expect_marked(page, "StoryNav/Flat/Three").await?;
+        // Alt is left out: Chromium downloads the link on an Alt-click.
+        for modifier in [
+            KeyboardModifier::Shift,
+            KeyboardModifier::Meta,
+            KeyboardModifier::Control,
+        ] {
+            let click = ClickOptions::builder().modifiers(vec![modifier]).build();
+            link(page, "StoryNav/Flat/Single")
+                .click(Some(click))
+                .await
+                .with_context(|| format!("{modifier:?}-click another story"))?;
+            settle(page).await?;
+            expect_marked(page, "StoryNav/Flat/Three")
+                .await
+                .with_context(|| format!("after a {modifier:?}-click"))?;
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn selecting_a_story_keeps_the_rest_of_the_url() -> Result<()> {
+    with_site(async |page: &Page, site: &Site| {
+        open(page, &site.at("?theme=dark&story=Knobs+%C2%B7+demo#panel")).await?;
+        click_story(page, "StoryNav/Flat/Single").await?;
+        expect_page(page)
+            .to_have_url(&site.at("?theme=dark&story=StoryNav/Flat/Single#panel"))
+            .await
+            .context("only the story changes in the URL")
     })
     .await
 }
