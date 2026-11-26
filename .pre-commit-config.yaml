@@ -62,7 +62,7 @@ repos:
       - id: cargo-clippy-e2e
         name: cargo clippy (theoria-e2e)
         description: Run clippy on the excluded e2e crate
-        entry: cargo clippy --manifest-path crates/theoria-e2e/Cargo.toml --all-targets -- -D warnings
+        entry: cargo clippy --locked --manifest-path crates/theoria-e2e/Cargo.toml --all-targets -- -D warnings
         language: system
         files: ^crates/theoria-e2e/
         pass_filenames: false
@@ -113,11 +113,11 @@ repos:
         files: (Cargo\.toml|Cargo\.lock|deny\.toml)$
 
       # The same check on crates/theoria-e2e, which CI's deny job runs
-      # through `deny-manifests`. Unlocked, as in CI: a stale lockfile is
-      # re-resolved, and the hook then fails on the file it rewrote.
+      # through `deny-manifests`. Locked, unlike CI, so a stale lockfile
+      # fails with cargo's message instead of being rewritten mid-commit.
       - id: cargo-deny-e2e
         name: cargo deny (theoria-e2e)
-        entry: cargo deny --workspace --config deny.toml --manifest-path crates/theoria-e2e/Cargo.toml check bans licenses sources
+        entry: cargo deny --locked --workspace --config deny.toml --manifest-path crates/theoria-e2e/Cargo.toml check bans licenses sources
         language: system
         pass_filenames: false
         files: ^(crates/theoria-e2e/Cargo\.(toml|lock)|deny\.toml)$
