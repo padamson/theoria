@@ -2,7 +2,7 @@
 //! over an editable widget as wide as the panel. Editing a widget writes the
 //! arg's signal. A story that takes the arg as a value runs its body again; one
 //! that takes it as a `Signal` redraws only what reads it. The args come from
-//! the `#[story]` macro.
+//! the `#[story]` macro. The Reset button puts every arg back to its default.
 
 use leptos::prelude::*;
 
@@ -24,10 +24,11 @@ fn show(number: NodeRef<leptos::html::Input>, text: &str) {
     }
 }
 
-/// The value is set when the box is built, not bound to the arg. Chromium
+/// The value is set when the box is drawn, not bound to the arg. Chromium
 /// reports a typed `1.` as `1`, and writing even that back drops the `.` and
-/// moves the caret to the start. The `value` attribute alone would not reach
-/// a box that has been typed in, which the panel reuses for the next story.
+/// moves the caret to the start. A reset draws the rows again over the same
+/// boxes, and only `prop:value` reaches a box that has been typed in; the
+/// `value` attribute would not.
 fn number_box(
     name: &'static str,
     number: NodeRef<leptos::html::Input>,
@@ -232,44 +233,57 @@ fn choice_widget(name: &'static str, choice: ChoiceControl) -> impl IntoView {
 #[component]
 pub fn Controls(args: Vec<Arg>) -> impl IntoView {
     (!args.is_empty()).then(move || {
-        let rows = args
-            .into_iter()
-            .map(|arg| {
-                let (name, ty) = (arg.name(), arg.ty());
-                let widget = match arg.control() {
-                    ArgControl::Bool(s) => view! {
-                        <input
-                            type="checkbox"
-                            aria-label=name
-                            prop:checked=move || s.get()
-                            on:change=move |ev| s.set(event_target_checked(&ev))
-                        />
-                    }
-                    .into_any(),
-                    ArgControl::Num(s) => number_widget(name, s).into_any(),
-                    ArgControl::Text(s) => text_box(
-                        name,
-                        s.get_untracked(),
-                        None,
-                        move || s.get(),
-                        move |text| s.set(text),
-                    )
-                    .into_any(),
-                    ArgControl::Bounded(s) => bounded_widget(name, s).into_any(),
-                    ArgControl::Color(s) => color_widget(name, s).into_any(),
-                    ArgControl::Choice(choice) => choice_widget(name, choice).into_any(),
-                };
-                view! {
-                    <div class="control-row">
-                        <div class="control-head">
-                            <span class="control-name">{name}</span>
-                            <code class="control-type">{ty}</code>
-                        </div>
-                        <div class="control-input">{widget}</div>
-                    </div>
-                }
+        let args = StoredValue::new(args);
+        // A number box is written only when it is drawn, so a reset of any
+        // arg draws the rows again, which patches each box in place.
+        let rows = move || {
+            args.with_value(|args| {
+                args.iter().for_each(Arg::track_reset);
+                args.iter().copied().map(row).collect::<Vec<_>>()
             })
-            .collect::<Vec<_>>();
-        view! { <div class="theoria-controls">{rows}</div> }
+        };
+        let reset = move |_| args.with_value(|args| args.iter().for_each(Arg::reset));
+        view! {
+            <div class="theoria-controls">
+                {rows}
+                <button type="button" class="theoria-reset" on:click=reset>"Reset"</button>
+            </div>
+        }
     })
+}
+
+fn row(arg: Arg) -> impl IntoView {
+    let (name, ty) = (arg.name(), arg.ty());
+    let widget = match arg.control() {
+        ArgControl::Bool(s) => view! {
+            <input
+                type="checkbox"
+                aria-label=name
+                prop:checked=move || s.get()
+                on:change=move |ev| s.set(event_target_checked(&ev))
+            />
+        }
+        .into_any(),
+        ArgControl::Num(s) => number_widget(name, s).into_any(),
+        ArgControl::Text(s) => text_box(
+            name,
+            s.get_untracked(),
+            None,
+            move || s.get(),
+            move |text| s.set(text),
+        )
+        .into_any(),
+        ArgControl::Bounded(s) => bounded_widget(name, s).into_any(),
+        ArgControl::Color(s) => color_widget(name, s).into_any(),
+        ArgControl::Choice(choice) => choice_widget(name, choice).into_any(),
+    };
+    view! {
+        <div class="control-row">
+            <div class="control-head">
+                <span class="control-name">{name}</span>
+                <code class="control-type">{ty}</code>
+            </div>
+            <div class="control-input">{widget}</div>
+        </div>
+    }
 }

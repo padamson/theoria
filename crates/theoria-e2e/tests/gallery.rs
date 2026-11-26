@@ -387,6 +387,76 @@ async fn controls_drive_the_stage_live() -> Result<()> {
     .await
 }
 
+fn reset_button(page: &Page) -> Locator {
+    page.locator(".theoria-panel .theoria-reset")
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn reset_puts_every_arg_of_the_story_back_to_its_default() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · demo").await?;
+        page.locator(".theoria-panel input[type=checkbox]")
+            .click(None)
+            .await
+            .context("toggle the flag control")?;
+        page.locator(".theoria-panel input[type=text]")
+            .fill("bye", None)
+            .await
+            .context("type a label")?;
+        page.locator(".theoria-panel input[type=number]")
+            .fill("7", None)
+            .await
+            .context("type a count")?;
+        for (class, edited) in [("k-flag", "OFF"), ("k-label", "bye"), ("k-count", "7")] {
+            expect(page.locator(format!(".theoria-stage .{class}")))
+                .to_have_text(edited)
+                .await
+                .with_context(|| format!("the stage's .{class} shows the edit {edited:?}"))?;
+        }
+
+        reset_button(page)
+            .click(None)
+            .await
+            .context("click Reset")?;
+
+        for (class, default) in [("k-flag", "ON"), ("k-label", "hi"), ("k-count", "2")] {
+            expect(page.locator(format!(".theoria-stage .{class}")))
+                .to_have_text(default)
+                .await
+                .with_context(|| format!("the stage's .{class} shows {default:?} again"))?;
+        }
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn reset_shows_the_default_in_a_number_box_typed_in() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · demo").await?;
+        let number = page.locator(".theoria-panel input[type=number]");
+        number.fill("7", None).await.context("type a count")?;
+        expect(page.locator(".theoria-stage .k-count"))
+            .to_have_text("7")
+            .await
+            .context("the count reaches the stage")?;
+
+        reset_button(page)
+            .click(None)
+            .await
+            .context("click Reset")?;
+
+        expect(number)
+            .to_have_value("2")
+            .await
+            .context("the number box shows the default")?;
+        Ok(())
+    })
+    .await
+}
+
 /// Leptos patches the stage's elements in place when a body reruns, so only
 /// state the body made tells a rerun from none.
 #[tokio::test]

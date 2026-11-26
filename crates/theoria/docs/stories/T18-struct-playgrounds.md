@@ -18,8 +18,8 @@ settle on can be pasted into the site.
   - [x] `Story::view` draws the story's body with its args' current values,
         so a leptotes test can check a story's wiring (which arg feeds what)
         without splitting the body into a function of its own
-- **T18.1 — reset**
-  - [ ] the controls panel has a Reset button that puts every arg of the
+- **T18.1 — reset** ✅
+  - [x] the controls panel has a Reset button that puts every arg of the
         selected story back to its default
 - **T18.2 — `#[derive(StoryArg)]` over a struct of leaf fields**
   - [ ] a struct that derives `StoryArg` is a `#[story]` arg, taken as the
@@ -62,8 +62,9 @@ settle on can be pasted into the site.
 - A crate whose theoria dependency is optional writes the derive and its
   attributes inside `cfg_attr(feature = "stories", ...)`.
 - `StoryArg` is sealed, and its supertraits (`sealed::Sealed`, and
-  `sealed::Plain` for the `Signal<T>` form) are private, so a derive
-  expanding in another crate cannot name them. T18.2 moves both to a
+  `sealed::Plain`, which a type's `Signal<T>` form needs and which holds
+  its `control` and `same`, the test a reset uses to skip an unedited arg)
+  are private, so a derive expanding in another crate cannot name them. T18.2 moves both to a
   `#[doc(hidden)]` public path the derive implements, so only the derive
   implements `StoryArg` outside theoria. The docs that say the trait is
   sealed (the CHANGELOG, `skills/theoria-usage/references/usage.md`, and

@@ -343,12 +343,49 @@ pub struct Arg {
     name: &'static str,
     ty: &'static str,
     control: ArgControl,
+    reset: Callback<()>,
+    resets: Trigger,
 }
 
 impl Arg {
+    /// An arg over `signal`, with the control its type picks. The value the
+    /// signal holds now is the arg's default, which [`Arg::reset`] puts back.
+    ///
+    /// ```
+    /// use leptos::prelude::*;
+    /// use theoria::{Arg, ArgControl};
+    ///
+    /// # Owner::new().with(|| {
+    /// let width = RwSignal::new(12.0);
+    /// let arg = Arg::new("width", "f64", width);
+    /// assert!(matches!(arg.control(), ArgControl::Num(_)));
+    /// # });
+    /// ```
     #[must_use]
-    pub fn new(name: &'static str, ty: &'static str, control: ArgControl) -> Self {
-        Self { name, ty, control }
+    pub fn new<V: sealed::Plain>(
+        name: &'static str,
+        ty: &'static str,
+        signal: RwSignal<V>,
+    ) -> Self {
+        let start = signal.get_untracked();
+        let resets = Trigger::new();
+        let reset = Callback::new(move |()| {
+            signal.maybe_update(|value| {
+                let edited = !value.same(&start);
+                if edited {
+                    *value = start.clone();
+                }
+                edited
+            });
+            resets.notify();
+        });
+        Self {
+            name,
+            ty,
+            control: V::control(signal),
+            reset,
+            resets,
+        }
     }
 
     #[must_use]
@@ -366,9 +403,24 @@ impl Arg {
     pub fn control(&self) -> ArgControl {
         self.control
     }
+
+    /// Put the arg back to its default.
+    pub fn reset(&self) {
+        self.reset.run(());
+    }
+
+    /// Track the arg's resets, edited or not, for a control that is not
+    /// bound to the arg's signal.
+    pub(crate) fn track_reset(&self) {
+        self.resets.track();
+    }
 }
 
 mod sealed {
+    use leptos::prelude::RwSignal;
+
+    use super::ArgControl;
+
     pub trait Sealed {}
 
     /// A story arg that is its own value. The supertraits repeat `Value`'s
@@ -378,7 +430,12 @@ mod sealed {
         label = "no control for a signal of this type",
         note = "a Signal arg holds a bool, f64, String, Bounded, Color, or Choice"
     )]
-    pub trait Plain: super::StoryArg<Value = Self> + Clone + Send + Sync + 'static {}
+    pub trait Plain: super::StoryArg<Value = Self> + Clone + Send + Sync + 'static {
+        fn control(signal: RwSignal<Self>) -> ArgControl;
+
+        /// Whether the control would show `self` and `other` the same.
+        fn same(&self, other: &Self) -> bool;
+    }
 }
 
 /// A type a `#[story]` parameter can have: `bool`, `f64`, `String`,
@@ -407,7 +464,7 @@ mod sealed {
 /// }
 /// ```
 ///
-/// The trait is sealed, and its methods are the `#[story]` macro's to call.
+/// The trait is sealed, and its method is the `#[story]` macro's to call.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot be a #[story] arg",
     label = "no control for this type",
@@ -421,24 +478,30 @@ pub trait StoryArg: Sized + sealed::Sealed {
     type Init: Into<Self::Value>;
 
     #[doc(hidden)]
-    fn control(signal: RwSignal<Self::Value>) -> ArgControl;
-
-    #[doc(hidden)]
     fn bind(signal: Signal<Self::Value>) -> Self;
 }
 
 macro_rules! value_arg {
     ($ty:ty, init: $init:ty, control: $variant:ident) => {
         impl sealed::Sealed for $ty {}
-        impl sealed::Plain for $ty {}
+
+        impl sealed::Plain for $ty {
+            fn control(signal: RwSignal<$ty>) -> ArgControl {
+                ArgControl::$variant(signal)
+            }
+
+            #[allow(
+                clippy::float_cmp,
+                reason = "a reset asks whether the arg still holds its exact default"
+            )]
+            fn same(&self, other: &Self) -> bool {
+                self == other
+            }
+        }
 
         impl StoryArg for $ty {
             type Value = $ty;
             type Init = $init;
-
-            fn control(signal: RwSignal<$ty>) -> ArgControl {
-                ArgControl::$variant(signal)
-            }
 
             fn bind(signal: Signal<$ty>) -> Self {
                 signal.get()
@@ -454,12 +517,7 @@ value_arg!(Bounded, init: Bounded, control: Bounded);
 value_arg!(Color, init: &'static str, control: Color);
 
 impl<T> sealed::Sealed for Choice<T> {}
-impl<T: Clone + Send + Sync + 'static> sealed::Plain for Choice<T> {}
-
-impl<T: Clone + Send + Sync + 'static> StoryArg for Choice<T> {
-    type Value = Self;
-    type Init = Self;
-
+impl<T: Clone + Send + Sync + 'static> sealed::Plain for Choice<T> {
     fn control(signal: RwSignal<Self>) -> ArgControl {
         let labels = signal.with_untracked(|choice| {
             choice
@@ -477,6 +535,16 @@ impl<T: Clone + Send + Sync + 'static> StoryArg for Choice<T> {
         })
     }
 
+    /// The options never change, so the selection is all there is to show.
+    fn same(&self, other: &Self) -> bool {
+        self.selected == other.selected
+    }
+}
+
+impl<T: Clone + Send + Sync + 'static> StoryArg for Choice<T> {
+    type Value = Self;
+    type Init = Self;
+
     fn bind(signal: Signal<Self>) -> Self {
         signal.get()
     }
@@ -487,10 +555,6 @@ impl<T: sealed::Plain> sealed::Sealed for Signal<T> {}
 impl<T: sealed::Plain> StoryArg for Signal<T> {
     type Value = T;
     type Init = T::Init;
-
-    fn control(signal: RwSignal<T>) -> ArgControl {
-        T::control(signal)
-    }
 
     fn bind(signal: Signal<T>) -> Self {
         signal
@@ -1052,6 +1116,20 @@ mod story_macro_tests {
     }
 
     #[test]
+    fn a_story_arg_resets_to_the_default_in_its_attribute() {
+        Owner::new().with(|| {
+            let story = widget();
+            let width = story.arg("width").expect("`widget` has a `width` arg");
+            let ArgControl::Num(s) = width.control() else {
+                panic!("`width` did not get the number control");
+            };
+            s.set(40.0);
+            width.reset();
+            assert_eq!(s.get_untracked(), 12.0);
+        });
+    }
+
+    #[test]
     fn arg_is_none_for_a_name_the_story_lacks() {
         Owner::new().with(|| {
             assert_eq!(widget().arg("height").map(|arg| arg.ty()), None);
@@ -1126,6 +1204,86 @@ mod story_macro_tests {
             Signal<i32>,
             Signal<Signal<f64>>,
         );
+    }
+}
+
+#[cfg(test)]
+mod arg_tests {
+    use super::*;
+
+    #[test]
+    fn reset_puts_a_number_back() {
+        Owner::new().with(|| {
+            let width = RwSignal::new(12.0);
+            let arg = Arg::new("width", "f64", width);
+            width.set(3.5);
+            arg.reset();
+            assert_eq!(width.get_untracked(), 12.0);
+        });
+    }
+
+    #[test]
+    fn a_reset_redraws_what_tracks_the_arg() {
+        Owner::new().with(|| {
+            let arg = Arg::new("width", "f64", RwSignal::new(12.0));
+            let runs = StoredValue::new(0);
+            let panel = Memo::new(move |_| {
+                arg.track_reset();
+                runs.update_value(|n| *n += 1);
+            });
+            panel.get();
+            arg.reset();
+            panel.get();
+            assert_eq!(runs.get_value(), 2);
+        });
+    }
+
+    #[test]
+    fn a_reset_of_an_unedited_number_writes_nothing() {
+        Owner::new().with(|| {
+            let width = RwSignal::new(12.0);
+            let arg = Arg::new("width", "f64", width);
+            let runs = StoredValue::new(0);
+            let reader = Memo::new(move |_| {
+                width.track();
+                runs.update_value(|n| *n += 1);
+            });
+            reader.get();
+            arg.reset();
+            reader.get();
+            assert_eq!(runs.get_value(), 1);
+        });
+    }
+
+    #[test]
+    fn a_reset_of_an_unedited_choice_writes_nothing() {
+        Owner::new().with(|| {
+            let build = RwSignal::new(Choice::new(["dev", "0.13.0"]));
+            let arg = Arg::new("build", "Choice<&str>", build);
+            let runs = StoredValue::new(0);
+            let reader = Memo::new(move |_| {
+                build.track();
+                runs.update_value(|n| *n += 1);
+            });
+            reader.get();
+            arg.reset();
+            reader.get();
+            assert_eq!(runs.get_value(), 1);
+        });
+    }
+
+    #[test]
+    fn reset_puts_a_choice_back() {
+        Owner::new().with(|| {
+            let build = RwSignal::new(Choice::new(["dev", "0.13.0", "0.14.0"]).selected("0.13.0"));
+            let arg = Arg::new("build", "Choice<&str>", build);
+            let ArgControl::Choice(choice) = arg.control() else {
+                panic!("`build` did not get the choice control");
+            };
+            choice.select(2);
+            arg.reset();
+            assert_eq!(build.get_untracked().value(), "0.13.0");
+        });
     }
 }
 

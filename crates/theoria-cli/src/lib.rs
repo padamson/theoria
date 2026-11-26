@@ -328,6 +328,7 @@ const GALLERY_INDEX_HTML: &str = r#"<!DOCTYPE html>
       .theoria-controls .control-input input, .theoria-controls .control-input select { width: 100%; box-sizing: border-box; padding: 3px 6px; border: 1px solid #d8d0be; border-radius: 6px; font: inherit; }
       .theoria-controls .control-input input[type=checkbox] { width: auto; }
       .theoria-controls .control-input select { background: #fff; }
+      .theoria-controls .theoria-reset { display: block; margin: 4px 10px 8px auto; padding: 3px 10px; border: 1px solid #d8d0be; border-radius: 6px; background: #faf7f0; color: #2c2a25; font: inherit; cursor: pointer; }
       .theoria-controls .control-input input[type=range] { flex: 1 1 6em; min-width: 0; padding: 0; border: none; }
       .theoria-bounded { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
       .theoria-bounded input[type=number] { flex: 1 1 4.5em; min-width: 0; }

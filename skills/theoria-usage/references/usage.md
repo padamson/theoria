@@ -54,6 +54,10 @@
   parameter's type as written (`ty()`, shown beside the name in the
   panel, so `Signal<f64>` reads as that), and its `control()`. Each
   control sits under its arg's name and type, as wide as the panel.
+  The panel's Reset button puts every arg of the story back to its
+  default, and `arg.reset()` does it for one; the panel shows either. A
+  reset writes only an arg that was edited, so it reruns a story that
+  takes values only when one of them changes.
 - `story.view()` draws the story's body with its args' current values,
   inside the reactive owner a leptotes `render` closure gives it. To test
   what an arg feeds, build the story in the closure, set the arg through

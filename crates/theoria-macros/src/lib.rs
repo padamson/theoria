@@ -185,7 +185,7 @@ fn story_arg(input: &FnArg, defaults: &HashMap<String, Expr>) -> syn::Result<Arg
         },
         get_let: quote_spanned!(span=> let #mutability #ident: #ty = #arg::bind(#read_ident);),
         entry: quote_spanned!(span=>
-            theoria::Arg::new(#name, #label, #arg::control(#sig_ident))
+            theoria::Arg::new(#name, #label, #sig_ident)
         ),
     })
 }

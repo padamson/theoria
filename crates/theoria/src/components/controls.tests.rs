@@ -4,19 +4,15 @@ use leptos::prelude::*;
 
 use super::Controls;
 use super::controls::picker_start;
-use crate::{Arg, ArgControl, Bounded, Choice, Color, StoryArg};
+use crate::{Arg, Bounded, Choice, Color};
 
 #[test]
 fn renders_a_widget_per_arg() {
     let html = leptotes::render(|| {
         let args = vec![
-            Arg::new("active", "bool", ArgControl::Bool(RwSignal::new(true))),
-            Arg::new("width", "Signal<f64>", ArgControl::Num(RwSignal::new(12.0))),
-            Arg::new(
-                "label",
-                "String",
-                ArgControl::Text(RwSignal::new("hi".to_string())),
-            ),
+            Arg::new("active", "bool", RwSignal::new(true)),
+            Arg::new("width", "Signal<f64>", RwSignal::new(12.0)),
+            Arg::new("label", "String", RwSignal::new("hi".to_string())),
         ];
         view! { <Controls args=args /> }
     });
@@ -35,6 +31,16 @@ fn renders_a_widget_per_arg() {
 }
 
 #[test]
+fn a_panel_with_args_has_a_reset_button() {
+    let html = number_control(12.5);
+    assert_eq!(
+        leptotes::count(&html, r#"class="theoria-reset""#),
+        1,
+        "got:\n{html}"
+    );
+}
+
+#[test]
 fn no_args_renders_nothing() {
     let html = leptotes::render(|| view! { <Controls args=Vec::new() /> });
     assert!(!html.contains("theoria-controls"));
@@ -44,7 +50,7 @@ fn number_control(value: f64) -> String {
     leptotes::render(move || {
         view! {
             <Controls args=vec![
-                Arg::new("width", "f64", ArgControl::Num(RwSignal::new(value))),
+                Arg::new("width", "f64", RwSignal::new(value)),
             ] />
         }
     })
@@ -68,7 +74,7 @@ fn bounded_control(bounded: Bounded) -> String {
     leptotes::render(move || {
         view! {
             <Controls args=vec![
-                Arg::new("radius", "Bounded", ArgControl::Bounded(RwSignal::new(bounded))),
+                Arg::new("radius", "Bounded", RwSignal::new(bounded)),
             ] />
         }
     })
@@ -127,7 +133,7 @@ fn color_control(color: &str) -> String {
     leptotes::render(move || {
         view! {
             <Controls args=vec![
-                Arg::new("ink", "Color", ArgControl::Color(RwSignal::new(color.clone()))),
+                Arg::new("ink", "Color", RwSignal::new(color.clone())),
             ] />
         }
     })
@@ -224,7 +230,7 @@ fn a_text_control_starts_at_its_arg() {
     let html = leptotes::render(|| {
         view! {
             <Controls args=vec![
-                Arg::new("label", "String", ArgControl::Text(RwSignal::new("Patio".to_string()))),
+                Arg::new("label", "String", RwSignal::new("Patio".to_string())),
             ] />
         }
     });
@@ -234,8 +240,8 @@ fn a_text_control_starts_at_its_arg() {
 
 fn choice_control(choice: Choice<&'static str>) -> String {
     leptotes::render(move || {
-        let control = Choice::control(RwSignal::new(choice.clone()));
-        view! { <Controls args=vec![Arg::new("build", "Choice<&'static str>", control)] /> }
+        let build = RwSignal::new(choice.clone());
+        view! { <Controls args=vec![Arg::new("build", "Choice<&'static str>", build)] /> }
     })
 }
 
@@ -283,7 +289,7 @@ fn a_checkbox_is_named_for_its_arg() {
     let html = leptotes::render(|| {
         view! {
             <Controls args=vec![
-                Arg::new("active", "bool", ArgControl::Bool(RwSignal::new(true))),
+                Arg::new("active", "bool", RwSignal::new(true)),
             ] />
         }
     });
@@ -301,7 +307,7 @@ fn a_text_field_is_named_for_its_arg() {
     let html = leptotes::render(|| {
         view! {
             <Controls args=vec![
-                Arg::new("label", "String", ArgControl::Text(RwSignal::new("Patio".to_string()))),
+                Arg::new("label", "String", RwSignal::new("Patio".to_string())),
             ] />
         }
     });

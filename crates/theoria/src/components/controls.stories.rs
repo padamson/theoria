@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 
 use super::Controls;
-use crate::{Arg, ArgControl, Bounded, Choice, Color, Story, story};
+use crate::{Arg, Bounded, Choice, Color, Story, story};
 
 /// A **knobs** demo: edit the controls and watch the stage update live.
 ///
@@ -109,17 +109,17 @@ pub fn stories() -> Vec<Story> {
             view! {
                 <div style="width: 280px">
                     <Controls args=vec![
-                        Arg::new("active", "bool", ArgControl::Bool(RwSignal::new(true))),
-                        Arg::new("width_ft", "f64", ArgControl::Num(RwSignal::new(12.0))),
+                        Arg::new("active", "bool", RwSignal::new(true)),
+                        Arg::new("width_ft", "f64", RwSignal::new(12.0)),
                         Arg::new(
                             "label",
                             "String",
-                            ArgControl::Text(RwSignal::new("Patio".to_string())),
+                            RwSignal::new("Patio".to_string()),
                         ),
                         Arg::new(
                             "selected_row_background_highlight_color_when_hovered",
                             "leptos::prelude::Signal<theoria::Color>",
-                            ArgControl::Color(RwSignal::new(Color::from("#243832"))),
+                            RwSignal::new(Color::from("#243832")),
                         ),
                     ] />
                 </div>
