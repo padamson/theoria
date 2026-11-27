@@ -199,8 +199,9 @@ narrows from there.
 
 A test is a claim about behavior, named as the claim, one claim per
 test, asserting the value rather than prose: `assert_eq!` on a story's
-name and args, `matches!` on an `ArgControl` variant, the rendered HTML
-from `leptotes::render`. Components live in `src/components/` as
+name and args, `matches!` on an `ArgControl` variant, a selector query on
+`leptotes::dom` (`dom.find(".theoria-stage").text()`), never a substring
+of the rendered HTML. Components live in `src/components/` as
 `<name>.rs`, with `<name>.stories.rs` (behind the `stories` feature) and
 `<name>.tests.rs` beside it. A test that needs something a fresh clone may
 lack is gated with `#[ignore = "reason; run with ..."]`. Never `return`

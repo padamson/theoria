@@ -1,9 +1,11 @@
 //! leptotes component tests for `Gallery`.
 
 use leptos::prelude::*;
+use leptotes::Dom;
 
 use super::Gallery;
 use super::gallery::{Opening, gallery_opened_at, opening, story_href, story_in, with_story};
+use super::story_nav_tests::badges;
 use crate::{Arg, Stories, Story};
 
 fn alpha_beta() -> Vec<Story> {
@@ -13,8 +15,8 @@ fn alpha_beta() -> Vec<Story> {
     ]
 }
 
-fn gallery_of(stories: Vec<Story>) -> String {
-    leptotes::render(move || view! { <Gallery stories=stories /> })
+fn gallery_of(stories: Vec<Story>) -> Dom {
+    leptotes::dom(move || view! { <Gallery stories=stories /> })
 }
 
 #[test]
@@ -22,7 +24,7 @@ fn stories_gallery_is_the_gallery_over_its_stories() {
     let stories: Stories = alpha_beta().into();
     assert_eq!(
         leptotes::render(move || stories.gallery()),
-        gallery_of(alpha_beta())
+        gallery_of(alpha_beta()).to_string()
     );
 }
 
@@ -39,7 +41,7 @@ fn stories_collect_in_order() {
     let stories: Stories = alpha_beta().into_iter().collect();
     assert_eq!(
         leptotes::render(move || stories.gallery()),
-        gallery_of(alpha_beta())
+        gallery_of(alpha_beta()).to_string()
     );
 }
 
@@ -49,7 +51,7 @@ fn stories_extend_at_the_end() {
     stories.extend(second());
     assert_eq!(
         leptotes::render(move || stories.gallery()),
-        gallery_of(alpha_beta())
+        gallery_of(alpha_beta()).to_string()
     );
 }
 
@@ -66,20 +68,19 @@ fn default_stories_are_empty() {
 }
 
 #[test]
-fn lists_names_and_shows_the_first_story() {
-    let stories = vec![
-        Story::new("Alpha", || view! { <p>"alpha-body"</p> }),
-        Story::new("Beta", || view! { <p>"beta-body"</p> }),
-    ];
-    let html = leptotes::render(move || view! { <Gallery stories=stories /> });
-    assert!(html.contains("Alpha"));
-    assert!(html.contains("Beta"));
-    assert!(html.contains("alpha-body"), "first story renders on load");
+fn the_sidebar_lists_every_story() {
+    let dom = gallery_of(alpha_beta());
+    assert_eq!(dom.texts(".theoria-nav a"), ["Alpha", "Beta"], "{dom}");
 }
 
 #[test]
-fn shows_controls_description_and_code_for_a_story_with_args() {
-    let html = leptotes::render(move || {
+fn the_first_story_is_on_the_stage_on_load() {
+    let dom = gallery_of(alpha_beta());
+    assert_eq!(dom.find(".theoria-stage").text(), "alpha-body", "{dom}");
+}
+
+fn gamma() -> Dom {
+    leptotes::dom(move || {
         let stories = vec![Story::__from_macro(
             "Gamma",
             || view! { <p>"gamma-body"</p> }.into_any(),
@@ -88,30 +89,52 @@ fn shows_controls_description_and_code_for_a_story_with_args() {
             Some("A gamma story."),
         )];
         view! { <Gallery stories=stories /> }
-    });
-    assert!(html.contains("gamma-body"), "the stage renders the view");
-    assert!(html.contains("A gamma story."), "the description renders");
-    assert!(
-        html.contains("theoria-controls") && html.contains("flag"),
-        "controls render"
+    })
+}
+
+#[test]
+fn a_story_with_args_is_drawn_on_the_stage() {
+    let dom = gamma();
+    assert_eq!(dom.find(".theoria-stage").text(), "gamma-body", "{dom}");
+}
+
+#[test]
+fn the_panel_shows_the_storys_description() {
+    let dom = gamma();
+    assert_eq!(
+        dom.find(".theoria-panel > .theoria-md").text(),
+        "A gamma story.",
+        "{dom}"
     );
-    assert!(html.contains("theoria-code"), "show-code renders");
+}
+
+#[test]
+fn the_panel_shows_a_control_per_arg() {
+    let dom = gamma();
+    assert_eq!(
+        dom.texts(".theoria-panel .theoria-controls .control-name"),
+        ["flag"],
+        "{dom}"
+    );
+}
+
+#[test]
+fn the_panel_shows_the_storys_code() {
+    let dom = gamma();
+    assert_eq!(
+        dom.find(".theoria-panel .theoria-code code").text(),
+        "view! { <Gamma /> }",
+        "{dom}"
+    );
 }
 
 #[test]
 fn only_stories_with_a_description_get_a_nav_docs_badge() {
-    let html = leptotes::render(move || {
-        let stories = vec![
-            Story::new("Alpha", || view! { <p>"alpha-body"</p> }),
-            Story::new("Beta", || view! { <p>"beta-body"</p> }).with_description("A beta story."),
-        ];
-        view! { <Gallery stories=stories /> }
-    });
-    assert_eq!(
-        leptotes::count(&html, "theoria-docs-badge"),
-        1,
-        "only Beta (with a description) gets the nav badge"
-    );
+    let dom = gallery_of(vec![
+        Story::new("Alpha", || view! { <p>"alpha-body"</p> }),
+        Story::new("Beta", || view! { <p>"beta-body"</p> }).with_description("A beta story."),
+    ]);
+    assert_eq!(badges(&dom), [0, 1], "{dom}");
 }
 
 fn described() -> Vec<Story> {
@@ -122,22 +145,18 @@ fn described() -> Vec<Story> {
 
 #[test]
 fn a_story_built_by_hand_shows_its_description_as_markdown() {
-    let html = gallery_of(described());
+    let dom = gallery_of(described());
     assert_eq!(
-        leptotes::count(&html, "<strong>here</strong>"),
-        1,
-        "the description renders in the panel; got:\n{html}"
+        dom.find(".theoria-panel > .theoria-md strong").text(),
+        "here",
+        "{dom}"
     );
 }
 
 #[test]
 fn a_story_built_by_hand_with_a_description_gets_the_nav_docs_badge() {
-    let html = gallery_of(described());
-    assert_eq!(
-        leptotes::count(&html, "theoria-docs-badge"),
-        1,
-        "got:\n{html}"
-    );
+    let dom = gallery_of(described());
+    assert_eq!(badges(&dom), [1], "{dom}");
 }
 
 #[test]
@@ -229,45 +248,34 @@ fn a_bare_url_opens_the_first_story_when_nothing_is_stored() {
     assert_eq!(opening(&NAMES, None, None), Opening::Story(0));
 }
 
-fn opened_at(opened: Opening) -> String {
-    leptotes::render(move || gallery_opened_at(alpha_beta(), opened))
+fn opened_at(opened: Opening) -> Dom {
+    leptotes::dom(move || gallery_opened_at(alpha_beta(), opened))
 }
 
 #[test]
 fn a_gallery_opened_at_a_story_shows_it() {
-    let html = opened_at(Opening::Story(1));
-    assert_eq!(
-        (
-            leptotes::count(&html, "beta-body"),
-            leptotes::count(&html, "alpha-body")
-        ),
-        (1, 0),
-        "got:\n{html}"
-    );
+    let dom = opened_at(Opening::Story(1));
+    assert_eq!(dom.find(".theoria-stage").text(), "beta-body", "{dom}");
 }
 
 #[test]
 fn a_gallery_opened_at_no_such_story_names_it_on_the_stage() {
-    let html = opened_at(Opening::NoSuchStory("Gamma".into()));
+    let dom = opened_at(Opening::NoSuchStory("Gamma".into()));
     assert_eq!(
-        leptotes::count(
-            &html,
-            r#"<p class="theoria-missing">No story named "Gamma"</p>"#
-        ),
-        1,
-        "got:\n{html}"
+        dom.find(".theoria-stage > .theoria-missing").text(),
+        r#"No story named "Gamma""#,
+        "{dom}"
     );
 }
 
 #[test]
-fn a_gallery_opened_at_no_such_story_marks_nothing_and_shows_no_panel() {
-    let html = opened_at(Opening::NoSuchStory("Gamma".into()));
-    assert_eq!(
-        (
-            leptotes::count(&html, "aria-current"),
-            leptotes::count(&html, "theoria-panel")
-        ),
-        (0, 0),
-        "got:\n{html}"
-    );
+fn a_gallery_opened_at_no_such_story_marks_no_story_current() {
+    let dom = opened_at(Opening::NoSuchStory("Gamma".into()));
+    assert_eq!(dom.count("[aria-current]"), 0, "{dom}");
+}
+
+#[test]
+fn a_gallery_opened_at_no_such_story_shows_no_panel() {
+    let dom = opened_at(Opening::NoSuchStory("Gamma".into()));
+    assert_eq!(dom.count(".theoria-panel"), 0, "{dom}");
 }

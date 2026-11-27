@@ -2,52 +2,77 @@
 
 use leptos::prelude::*;
 
+use leptotes::{Dom, Element};
+
 use super::Controls;
 use super::controls::picker_start;
 use crate::{Arg, Bounded, Choice, Color};
 
-#[test]
-fn renders_a_widget_per_arg() {
-    let html = leptotes::render(|| {
+/// `attr` on every element in `elements`, in order, `None` where it is missing.
+pub(super) fn each<'a>(elements: Vec<Element<'a>>, attr: &str) -> Vec<Option<&'a str>> {
+    elements.into_iter().map(|el| el.attr(attr)).collect()
+}
+
+/// A one-declaration `style` value without the `;` Leptos writes after it.
+fn declaration(style: Option<&str>) -> Option<&str> {
+    style.map(|style| style.trim_end_matches(';'))
+}
+
+fn three_args() -> Dom {
+    leptotes::dom(|| {
         let args = vec![
             Arg::new("active", "bool", RwSignal::new(true)),
             Arg::new("width", "Signal<f64>", RwSignal::new(12.0)),
             Arg::new("label", "String", RwSignal::new("hi".to_string())),
         ];
         view! { <Controls args=args /> }
-    });
-    assert!(html.contains("theoria-controls"), "the panel renders");
-    assert!(html.contains("active") && html.contains("width") && html.contains("label"));
-    assert_eq!(leptotes::count(&html, "<input"), 3, "one widget per arg");
-    assert!(html.contains("checkbox"), "bool → checkbox");
-    assert!(html.contains("number"), "f64 → number input");
-    // Each row shows its arg's type as the story wrote it.
-    assert!(html.contains(">bool<"), "bool type label");
-    assert!(
-        html.contains(">Signal&lt;f64&gt;<"),
-        "Signal<f64> type label"
+    })
+}
+
+#[test]
+fn each_row_is_named_for_its_arg() {
+    let dom = three_args();
+    assert_eq!(
+        dom.texts(".control-name"),
+        ["active", "width", "label"],
+        "{dom}"
     );
-    assert!(html.contains(">String<"), "String type label");
+}
+
+#[test]
+fn each_row_shows_its_args_type_as_the_story_wrote_it() {
+    let dom = three_args();
+    assert_eq!(
+        dom.texts(".control-type"),
+        ["bool", "Signal<f64>", "String"],
+        "{dom}"
+    );
+}
+
+#[test]
+fn each_arg_gets_the_input_its_type_picks() {
+    let dom = three_args();
+    assert_eq!(
+        each(dom.find_all("input"), "type"),
+        [Some("checkbox"), Some("number"), Some("text")],
+        "{dom}"
+    );
 }
 
 #[test]
 fn a_panel_with_args_has_a_reset_button() {
-    let html = number_control(12.5);
-    assert_eq!(
-        leptotes::count(&html, r#"class="theoria-reset""#),
-        1,
-        "got:\n{html}"
-    );
+    let dom = number_control(12.5);
+    assert_eq!(dom.count("button.theoria-reset"), 1, "{dom}");
 }
 
 #[test]
-fn no_args_renders_nothing() {
-    let html = leptotes::render(|| view! { <Controls args=Vec::new() /> });
-    assert!(!html.contains("theoria-controls"));
+fn no_args_draws_no_panel() {
+    let dom = leptotes::dom(|| view! { <Controls args=Vec::new() /> });
+    assert_eq!(dom.count(".theoria-controls"), 0, "{dom}");
 }
 
-fn number_control(value: f64) -> String {
-    leptotes::render(move || {
+fn number_control(value: f64) -> Dom {
+    leptotes::dom(move || {
         view! {
             <Controls args=vec![
                 Arg::new("width", "f64", RwSignal::new(value)),
@@ -58,20 +83,20 @@ fn number_control(value: f64) -> String {
 
 #[test]
 fn a_number_control_starts_at_its_arg() {
-    let html = number_control(12.5);
-    assert!(html.contains(r#"value="12.5""#), "got:\n{html}");
+    let dom = number_control(12.5);
+    assert_eq!(dom.find("input").attr("value"), Some("12.5"), "{dom}");
 }
 
 #[test]
 fn a_number_control_for_a_non_finite_arg_starts_empty() {
     for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
-        let html = number_control(value);
-        assert!(!html.contains("value="), "arg {value}; got:\n{html}");
+        let dom = number_control(value);
+        assert_eq!(dom.find("input").attr("value"), None, "arg {value}; {dom}");
     }
 }
 
-fn bounded_control(bounded: Bounded) -> String {
-    leptotes::render(move || {
+fn bounded_control(bounded: Bounded) -> Dom {
+    leptotes::dom(move || {
         view! {
             <Controls args=vec![
                 Arg::new("radius", "Bounded", RwSignal::new(bounded)),
@@ -80,57 +105,79 @@ fn bounded_control(bounded: Bounded) -> String {
     })
 }
 
-fn inputs_of_type(html: &str, ty: &str) -> usize {
-    leptotes::count(html, &format!(r#"type="{ty}""#))
+fn quarter_steps() -> Dom {
+    bounded_control(Bounded::new(0.25).min(0.0).max(1.0).step(0.0625))
 }
 
 #[test]
-fn a_bounded_control_with_both_bounds_draws_a_slider() {
-    let html = bounded_control(Bounded::new(0.25).min(0.0).max(1.0).step(0.0625));
-    assert_eq!(inputs_of_type(&html, "range"), 1, "got:\n{html}");
+fn a_bounded_control_with_both_bounds_draws_a_number_box_then_a_slider() {
+    let dom = quarter_steps();
+    assert_eq!(
+        each(dom.find_all("input"), "type"),
+        [Some("number"), Some("range")],
+        "{dom}"
+    );
 }
 
 #[test]
-fn a_bounded_control_with_both_bounds_draws_a_number_box() {
-    let html = bounded_control(Bounded::new(0.25).min(0.0).max(1.0).step(0.0625));
-    assert_eq!(inputs_of_type(&html, "number"), 1, "got:\n{html}");
+fn a_bounded_controls_inputs_both_carry_its_min() {
+    let dom = quarter_steps();
+    assert_eq!(
+        each(dom.find_all("input"), "min"),
+        [Some("0"), Some("0")],
+        "{dom}"
+    );
 }
 
 #[test]
-fn a_bounded_controls_inputs_both_carry_its_bounds_and_step() {
-    let html = bounded_control(Bounded::new(0.25).min(0.0).max(1.0).step(0.0625));
-    for attr in [r#"min="0""#, r#"max="1""#, r#"step="0.0625""#] {
-        assert_eq!(leptotes::count(&html, attr), 2, "{attr}; got:\n{html}");
-    }
+fn a_bounded_controls_inputs_both_carry_its_max() {
+    let dom = quarter_steps();
+    assert_eq!(
+        each(dom.find_all("input"), "max"),
+        [Some("1"), Some("1")],
+        "{dom}"
+    );
 }
 
 #[test]
-fn a_bounded_control_without_both_bounds_draws_no_slider() {
-    let html = bounded_control(Bounded::new(3.0).min(0.0));
-    assert_eq!(inputs_of_type(&html, "range"), 0, "got:\n{html}");
+fn a_bounded_controls_inputs_both_carry_its_step() {
+    let dom = quarter_steps();
+    assert_eq!(
+        each(dom.find_all("input"), "step"),
+        [Some("0.0625"), Some("0.0625")],
+        "{dom}"
+    );
 }
 
 #[test]
-fn a_bounded_control_without_both_bounds_draws_a_number_box() {
-    let html = bounded_control(Bounded::new(3.0).min(0.0));
-    assert_eq!(inputs_of_type(&html, "number"), 1, "got:\n{html}");
+fn a_bounded_control_without_both_bounds_draws_only_a_number_box() {
+    let dom = bounded_control(Bounded::new(3.0).min(0.0));
+    assert_eq!(
+        each(dom.find_all("input"), "type"),
+        [Some("number")],
+        "{dom}"
+    );
 }
 
 #[test]
 fn a_bounded_control_without_a_step_takes_any_value() {
-    let html = bounded_control(Bounded::new(3.0));
-    assert_eq!(leptotes::count(&html, r#"step="any""#), 1, "got:\n{html}");
+    let dom = bounded_control(Bounded::new(3.0));
+    assert_eq!(dom.find("input").attr("step"), Some("any"), "{dom}");
 }
 
 #[test]
 fn a_bounded_number_box_starts_at_its_value() {
-    let html = bounded_control(Bounded::new(0.25).min(0.0).max(1.0));
-    assert_eq!(leptotes::count(&html, r#"value="0.25""#), 1, "got:\n{html}");
+    let dom = bounded_control(Bounded::new(0.25).min(0.0).max(1.0));
+    assert_eq!(
+        dom.find("input[type=number]").attr("value"),
+        Some("0.25"),
+        "{dom}"
+    );
 }
 
-fn color_control(color: &str) -> String {
+fn color_control(color: &str) -> Dom {
     let color = Color::from(color);
-    leptotes::render(move || {
+    leptotes::dom(move || {
         view! {
             <Controls args=vec![
                 Arg::new("ink", "Color", RwSignal::new(color.clone())),
@@ -140,53 +187,38 @@ fn color_control(color: &str) -> String {
 }
 
 #[test]
-fn a_color_control_draws_a_swatch() {
-    let html = color_control("#243832");
-    assert_eq!(inputs_of_type(&html, "color"), 1, "got:\n{html}");
-}
-
-#[test]
-fn a_color_control_draws_a_text_field() {
-    let html = color_control("#243832");
-    assert_eq!(inputs_of_type(&html, "text"), 1, "got:\n{html}");
-}
-
-/// The one `<input>` tag of type `ty` in `html`.
-fn input_tag<'a>(html: &'a str, ty: &str) -> &'a str {
-    let marker = format!(r#"type="{ty}""#);
-    let tags: Vec<&str> = html
-        .split("<input")
-        .skip(1)
-        .map(|rest| &rest[..rest.find('>').unwrap_or(rest.len())])
-        .filter(|tag| tag.contains(&marker))
-        .collect();
-    assert_eq!(tags.len(), 1, "one {ty} input; got:\n{html}");
-    tags[0]
-}
-
-#[test]
-fn a_color_controls_swatch_is_painted_with_the_color_as_written() {
-    let html = color_control("rgb(36 56 50 / 0.8)");
+fn a_color_control_draws_a_picker_then_a_text_field() {
+    let dom = color_control("#243832");
     assert_eq!(
-        leptotes::count(&html, "background-color:rgb(36 56 50 / 0.8)"),
-        1,
-        "got:\n{html}"
+        each(dom.find_all("input"), "type"),
+        [Some("color"), Some("text")],
+        "{dom}"
     );
 }
 
 #[test]
-fn text_that_would_style_more_than_a_color_paints_no_swatch() {
-    let html = color_control("teal; width: 9em");
-    assert_eq!(leptotes::count(&html, "style="), 0, "got:\n{html}");
+fn a_color_controls_swatch_is_painted_with_the_color_as_written() {
+    let dom = color_control("rgb(36 56 50 / 0.8)");
+    assert_eq!(
+        declaration(dom.find(".theoria-swatch > span").attr("style")),
+        Some("background-color:rgb(36 56 50 / 0.8)"),
+        "{dom}"
+    );
+}
+
+#[test]
+fn text_that_would_style_more_than_a_color_styles_nothing() {
+    let dom = color_control("teal; width: 9em");
+    assert_eq!(dom.count("[style]"), 0, "{dom}");
 }
 
 #[test]
 fn a_color_controls_text_field_says_what_it_takes() {
-    let html = color_control("#243832");
-    let text = input_tag(&html, "text");
-    assert!(
-        text.contains(r##"placeholder="#rrggbb or any CSS color""##),
-        "got: {text}"
+    let dom = color_control("#243832");
+    assert_eq!(
+        dom.find("input[type=text]").attr("placeholder"),
+        Some("#rrggbb or any CSS color"),
+        "{dom}"
     );
 }
 
@@ -217,29 +249,32 @@ fn the_picker_opens_one_step_off_black_for_a_color_outside_rgb() {
 
 #[test]
 fn a_color_controls_text_starts_at_the_color_as_written() {
-    let html = color_control("rgb(36 56 50 / 0.8)");
+    let dom = color_control("rgb(36 56 50 / 0.8)");
     assert_eq!(
-        leptotes::count(&html, r#"value="rgb(36 56 50 / 0.8)""#),
-        1,
-        "got:\n{html}"
+        dom.find("input[type=text]").attr("value"),
+        Some("rgb(36 56 50 / 0.8)"),
+        "{dom}"
     );
 }
 
-#[test]
-fn a_text_control_starts_at_its_arg() {
-    let html = leptotes::render(|| {
+fn text_control() -> Dom {
+    leptotes::dom(|| {
         view! {
             <Controls args=vec![
                 Arg::new("label", "String", RwSignal::new("Patio".to_string())),
             ] />
         }
-    });
-    let text = input_tag(&html, "text");
-    assert!(text.contains(r#"value="Patio""#), "got: {text}");
+    })
 }
 
-fn choice_control(choice: Choice<&'static str>) -> String {
-    leptotes::render(move || {
+#[test]
+fn a_text_control_starts_at_its_arg() {
+    let dom = text_control();
+    assert_eq!(dom.find("input").attr("value"), Some("Patio"), "{dom}");
+}
+
+fn choice_control(choice: Choice<&'static str>) -> Dom {
+    leptotes::dom(move || {
         let build = RwSignal::new(choice.clone());
         view! { <Controls args=vec![Arg::new("build", "Choice<&'static str>", build)] /> }
     })
@@ -247,93 +282,93 @@ fn choice_control(choice: Choice<&'static str>) -> String {
 
 #[test]
 fn a_choice_control_draws_a_select() {
-    let html = choice_control(Choice::new(["dev", "0.13.0"]));
-    assert_eq!(leptotes::count(&html, "<select"), 1, "got:\n{html}");
+    let dom = choice_control(Choice::new(["dev", "0.13.0"]));
+    assert_eq!(dom.count("select"), 1, "{dom}");
 }
 
 #[test]
 fn a_choice_control_lists_each_option_under_its_label() {
-    let html = choice_control(Choice::labelled([
+    let dom = choice_control(Choice::labelled([
         ("Serif", "Georgia, serif"),
         ("Sans", "system-ui"),
     ]));
-    for label in [">Serif</option>", ">Sans</option>"] {
-        assert_eq!(leptotes::count(&html, label), 1, "{label}; got:\n{html}");
-    }
-}
-
-/// The labels of the options marked `selected` in `html`.
-fn selected_labels(html: &str) -> Vec<&str> {
-    html.split("<option")
-        .skip(1)
-        .filter_map(|rest| {
-            let (tag, after) = rest.split_once('>')?;
-            let (label, _) = after.split_once("</option>")?;
-            tag.contains(" selected").then_some(label)
-        })
-        .collect()
+    assert_eq!(dom.texts("select option"), ["Serif", "Sans"], "{dom}");
 }
 
 #[test]
 fn a_choice_control_marks_the_selected_option_alone() {
-    let html = choice_control(Choice::new(["dev", "0.13.0", "0.14.0"]).selected("0.13.0"));
-    assert_eq!(selected_labels(&html), ["0.13.0"], "got:\n{html}");
-}
-
-fn named(html: &str, name: &str) -> usize {
-    leptotes::count(html, &format!(r#"aria-label="{name}""#))
+    let dom = choice_control(Choice::new(["dev", "0.13.0", "0.14.0"]).selected("0.13.0"));
+    assert_eq!(dom.texts("option[selected]"), ["0.13.0"], "{dom}");
 }
 
 #[test]
 fn a_checkbox_is_named_for_its_arg() {
-    let html = leptotes::render(|| {
+    let dom = leptotes::dom(|| {
         view! {
             <Controls args=vec![
                 Arg::new("active", "bool", RwSignal::new(true)),
             ] />
         }
     });
-    assert_eq!(named(&html, "active"), 1, "got:\n{html}");
+    assert_eq!(
+        each(dom.find_all("input"), "aria-label"),
+        [Some("active")],
+        "{dom}"
+    );
 }
 
 #[test]
 fn a_number_box_is_named_for_its_arg() {
-    let html = number_control(12.5);
-    assert_eq!(named(&html, "width"), 1, "got:\n{html}");
+    let dom = number_control(12.5);
+    assert_eq!(
+        each(dom.find_all("input"), "aria-label"),
+        [Some("width")],
+        "{dom}"
+    );
 }
 
 #[test]
 fn a_text_field_is_named_for_its_arg() {
-    let html = leptotes::render(|| {
-        view! {
-            <Controls args=vec![
-                Arg::new("label", "String", RwSignal::new("Patio".to_string())),
-            ] />
-        }
-    });
-    assert_eq!(named(&html, "label"), 1, "got:\n{html}");
+    let dom = text_control();
+    assert_eq!(
+        each(dom.find_all("input"), "aria-label"),
+        [Some("label")],
+        "{dom}"
+    );
 }
 
 #[test]
 fn a_bounded_controls_number_box_and_slider_are_both_named_for_its_arg() {
-    let html = bounded_control(Bounded::new(0.25).min(0.0).max(1.0));
-    assert_eq!(named(&html, "radius"), 2, "got:\n{html}");
+    let dom = bounded_control(Bounded::new(0.25).min(0.0).max(1.0));
+    assert_eq!(
+        each(dom.find_all("input"), "aria-label"),
+        [Some("radius"), Some("radius")],
+        "{dom}"
+    );
 }
 
 #[test]
-fn a_color_controls_swatch_and_text_field_are_both_named_for_its_arg() {
-    let html = color_control("#243832");
-    assert_eq!(named(&html, "ink"), 2, "got:\n{html}");
+fn a_color_controls_picker_and_text_field_are_both_named_for_its_arg() {
+    let dom = color_control("#243832");
+    assert_eq!(
+        each(dom.find_all("input"), "aria-label"),
+        [Some("ink"), Some("ink")],
+        "{dom}"
+    );
 }
 
 #[test]
 fn a_menu_is_named_for_its_arg() {
-    let html = choice_control(Choice::new(["dev", "0.13.0"]));
-    assert_eq!(named(&html, "build"), 1, "got:\n{html}");
+    let dom = choice_control(Choice::new(["dev", "0.13.0"]));
+    assert_eq!(
+        dom.find("select").attr("aria-label"),
+        Some("build"),
+        "{dom}"
+    );
 }
 
-fn group_control() -> String {
-    leptotes::render(|| {
+fn group_control() -> Dom {
+    leptotes::dom(|| {
         let size = Arg::group(
             "size",
             "Size",
@@ -348,40 +383,45 @@ fn group_control() -> String {
 
 #[test]
 fn a_group_is_labelled_by_its_name() {
-    let html = group_control();
+    let dom = group_control();
     assert_eq!(
-        leptotes::count(&html, r#"role="group" aria-label="size""#),
-        1,
-        "got:\n{html}"
+        dom.find("[role=group]").attr("aria-label"),
+        Some("size"),
+        "{dom}"
     );
 }
 
 #[test]
-fn a_group_draws_a_control_per_arg_in_it() {
-    let html = group_control();
-    let inputs = [
-        inputs_of_type(&html, "number"),
-        inputs_of_type(&html, "checkbox"),
-    ];
-    assert_eq!(inputs, [1, 1], "got:\n{html}");
+fn a_group_draws_a_control_per_arg_inside_it() {
+    let dom = group_control();
+    assert_eq!(
+        each(dom.find("[role=group]").find_all("input"), "type"),
+        [Some("number"), Some("checkbox")],
+        "{dom}"
+    );
 }
 
 #[test]
 fn a_group_shows_its_type() {
-    let html = group_control();
-    assert_eq!(leptotes::count(&html, ">Size<"), 1, "got:\n{html}");
+    let dom = group_control();
+    assert_eq!(
+        dom.find("[role=group] > .control-head .control-type")
+            .text(),
+        "Size",
+        "{dom}"
+    );
 }
 
 #[test]
 fn an_args_description_is_drawn_as_markdown_with_its_control() {
-    let html = leptotes::render(|| {
+    let dom = leptotes::dom(|| {
         let width =
             Arg::new("width", "f64", RwSignal::new(12.0)).with_description("The width, in `ft`.");
         view! { <Controls args=vec![width] /> }
     });
     assert_eq!(
-        leptotes::count(&html, "The width, in <code>ft</code>."),
-        1,
-        "got:\n{html}"
+        dom.find(".control-row > .control-description code").text(),
+        "ft",
+        "{dom}"
     );
 }
