@@ -61,13 +61,22 @@ a gallery from `theoria::stories`). Never put a `Gallery` inside a
 
 ## Testing
 
-- **Components:** `leptotes::render(|| view! { ... })` returns the SSR
-  HTML, and the test asserts on it. Build signals inside the closure.
-  leptotes renders under `ssr`, which the workspace gets through the
-  leptotes dev-dependency.
-- **Macro:** call `story_impl(attr, item)` and check the tokens, or use
-  `#[story]` on a function in `lib.rs`'s `story_macro_tests` and check the
-  `Story` it builds (inside an `Owner`, since the args are signals). The
+- **Components:** `leptotes::dom(|| view! { ... })` renders the SSR HTML
+  and parses it, and the test queries it by selector (`dom.find(sel)`,
+  `dom.texts(sel)`, `el.attr(name)`), with `"{dom}"` as the message.
+  Scope a query to the element the claim is about (`dom.find(".theoria-group")
+  .texts("a")`), and read an attribute off every match with `find_all` and
+  `attr`, since `attrs` leaves out a match that lacks it. Build signals
+  inside the closure. leptotes renders under `ssr`, which the workspace
+  gets through the leptotes dev-dependency; Leptos writes a `style` value
+  with a trailing `;`.
+- **Macro:** what `#[story]` accepts is tested through the `Story` it
+  builds: use `#[story]` on a function in `lib.rs`'s `story_macro_tests`
+  and check the `Story` (inside an `Owner`, since the args are signals),
+  never the shape of the expansion. What it refuses is tested in
+  theoria-macros: `story_impl(attr, item)` returns `syn::Result`, and the
+  test matches the `Err` by the thing it names. Its helpers that decide
+  (`type_label`, `param_name`, `doc_text`) are tested on what they return. The
   derive's refusals and field kinds are tested in theoria-macros on
   `named_fields` and `field_kinds`; what a derived struct draws and feeds
   is tested on structs that derive it in `lib.rs`'s `derive_tests`.
@@ -95,10 +104,13 @@ a gallery from `theoria::stories`). Never put a `Gallery` inside a
   nextest run *` exclusion covers; under `cargo test` the sandbox stops
   Chromium at launch.
 
-Mutation testing covers `theoria-cli` and `theoria-macros` only
-(`.cargo/mutants.toml` says why `theoria` is left out). The excluded
-mutants (`main`, `trunk`, the `story` adapter) are reachable only end to
-end.
+Mutation testing covers all three crates. The excluded mutants are
+reachable only end to end: `main`, `trunk`, and the `story` adapter; the
+`*.stories.rs` files and `components::stories`, which theoria-e2e opens;
+and theoria's browser-only code (the URL and `localStorage`, a click's
+modifier keys, the control handlers' event reads), which a leptotes render
+never runs. Logic an event handler runs goes in a function a native test
+can call (`Bounded::set`), so only the handler's wiring is left to e2e.
 
 ## The CLI's harness
 

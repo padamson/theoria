@@ -317,6 +317,15 @@ impl Bounded {
         self.value
     }
 
+    /// Whether moving to `value` changed the arg, so an edit that lands where
+    /// it already is does not run the story again.
+    fn set(&mut self, value: f64) -> bool {
+        let next = self.with_value(value);
+        let changed = next != *self;
+        *self = next;
+        changed
+    }
+
     fn with_value(self, value: f64) -> Self {
         Self {
             value: self.snap(self.clamp(value)),
@@ -1695,7 +1704,7 @@ mod arg_tests {
 
 #[cfg(test)]
 mod bounded_tests {
-    use super::Bounded;
+    use super::{Bounded, decimals, round_to};
 
     fn unit() -> Bounded {
         Bounded::new(0.5).min(0.0).max(1.0)
@@ -1797,6 +1806,60 @@ mod bounded_tests {
     #[test]
     fn without_a_step_a_value_between_the_bounds_is_kept() {
         assert_eq!(unit().with_value(0.3).value(), 0.3);
+    }
+
+    #[test]
+    fn moving_to_a_new_value_is_a_change() {
+        let mut radius = Bounded::new(0.25).min(0.0).max(1.0);
+        assert!(radius.set(0.5), "{radius:?}");
+    }
+
+    #[test]
+    fn moving_stores_the_new_value() {
+        let mut radius = Bounded::new(0.25).min(0.0).max(1.0);
+        radius.set(0.5);
+        assert_eq!(radius.value(), 0.5);
+    }
+
+    #[test]
+    fn moving_past_a_bound_the_value_sits_on_is_no_change() {
+        let mut radius = Bounded::new(1.0).min(0.0).max(1.0);
+        assert!(!radius.set(5.0), "{radius:?}");
+    }
+
+    #[test]
+    fn a_maximum_on_a_step_is_a_value_the_arg_can_take() {
+        assert_eq!(quarters().with_value(1.0).value(), 1.0);
+    }
+
+    #[test]
+    fn a_numbers_decimals_are_the_digits_after_its_point() {
+        assert_eq!(decimals(0.0625), 4);
+    }
+
+    #[test]
+    fn a_whole_number_has_no_decimals() {
+        assert_eq!(decimals(3.0), 0);
+    }
+
+    // `1e-320` prints with 320 decimals, and `10f64.powi(320)` is infinite,
+    // so scaling by it would make the value NaN.
+    #[test]
+    fn rounding_to_more_places_than_an_f64_holds_leaves_the_value() {
+        assert_eq!(round_to(0.5, decimals(1e-320)), 0.5);
+    }
+}
+
+#[cfg(test)]
+mod color_tests {
+    use super::Color;
+
+    #[test]
+    fn a_color_displays_as_written() {
+        assert_eq!(
+            Color::from("rgb(36 56 50 / 0.8)").to_string(),
+            "rgb(36 56 50 / 0.8)"
+        );
     }
 }
 

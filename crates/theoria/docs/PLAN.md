@@ -73,20 +73,19 @@ already ships, so they are fixed when found to matter, not pulled.
   `every_story_renders_and_selects`). Two stories with the same leaf label in
   different groups make the click ambiguous. Click by index on the sidebar's
   buttons.
+- **A group's label is a clickable `<div>`** (`StoryNav`, `render_nodes`).
+  A keyboard cannot reach it to open or close the group, nothing tells a
+  screen reader whether the group is open, and the caret glyph is read as
+  part of the group's name. Make it a `<button aria-expanded=...>` with the
+  caret `aria-hidden="true"`. Then a component test can read the group's
+  name without stripping the caret, and read whether it is open from
+  `aria-expanded`.
 
 ### Test debt
 
 - **No Windows job builds a generated harness.** The CLI's tests parse the
   generated `Cargo.toml` and `Trunk.toml` with a `C:\` path, on every
   platform, but cargo and Trunk never consume one on Windows.
-- **theoria is outside mutation testing.** Its leptotes tests catch 19 of its
-  40 mutants. The survivors are in the `*.stories.rs` files and the csr-only
-  `localStorage` code, which the native build never compiles, plus two real
-  gaps: `+` to `*` in `story_nav.rs`'s tree builder and `==` to `!=` in
-  `gallery.rs`. Adding `crates/theoria/src` to `.cargo/mutants.toml` waits on
-  excluding the first two and closing the last.
-- **Prose-shaped asserts.** `story_nav.tests.rs` chains eleven `contains` in
-  one assert, and `theoria-macros`' tests compare stringified tokens.
 
 ## Storybook parity roadmap
 

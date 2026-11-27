@@ -78,12 +78,7 @@ fn bounded_widget(name: &'static str, s: RwSignal<Bounded>) -> impl IntoView {
         .map_or_else(|| "any".to_string(), |step| step.to_string());
     let number = NodeRef::<leptos::html::Input>::new();
     let set = move |value: f64| {
-        s.maybe_update(|b| {
-            let next = b.with_value(value);
-            let changed = next != *b;
-            *b = next;
-            changed
-        });
+        s.maybe_update(|b| b.set(value));
     };
     let slider = start.min.zip(start.max).map(|(min, max)| {
         view! {

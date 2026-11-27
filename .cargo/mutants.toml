@@ -25,25 +25,18 @@ test_workspace = true
 # browser suites that no mutant in a logic crate can fail:
 # additional_cargo_test_args = ["-E", "not test(/e2e|slow/)"]
 
-# theoria-cli (gallery generation) and theoria-macros (the `#[story]`
-# codegen and doc and source extraction), as in slp. A macro mutant that
-# breaks the code theoria's own `#[story]` tests compile is reported
-# unviable, not caught: the workspace build fails before any test runs. theoria is left out
-# for now: its leptotes tests catch about half its mutants, but the rest
-# are in the `*.stories.rs` files and the csr-only localStorage code,
-# which the native test build never compiles, and two are real gaps
-# (`story_nav.rs` and `gallery.rs`). Adding it waits on excluding the first
-# two and closing the last.
+# All three crates. A macro mutant that breaks the code theoria's own
+# `#[story]` tests compile is reported unviable, not caught: the workspace
+# build fails before any test runs.
 examine_globs = [
+    "crates/theoria/src/**/*.rs",
     "crates/theoria-cli/src/**/*.rs",
     "crates/theoria-macros/src/**/*.rs",
 ]
 
-# Keep codegen output and test doubles out of scope. Generated code
-# (panschema, prost, tonic, bindgen) has its source of truth in the
-# schema and its tests upstream, so mutating it only produces
-# surviving-mutant noise; a fake's behavior is whatever the test wants.
-# exclude_globs = ["src/generated/**/*.rs", "src/fakes.rs"]
+# theoria's own stories are the e2e gallery's fixtures: theoria-e2e opens
+# every one in a browser, and no native test reads a story list.
+exclude_globs = ["crates/theoria/src/**/*.stories.rs"]
 
 # Every exclude carries its equivalence argument next to it.
 exclude_re = [
@@ -57,4 +50,33 @@ exclude_re = [
     # cannot be called outside a proc-macro context. The logic is in
     # `story_impl`, which the tests cover.
     'replace story -> TokenStream with Default::default\(\)',
+    # theoria `Stories::mount` and the panic hook it sets, behind `csr` and
+    # wasm32, which the native test build never compiles. theoria-e2e
+    # mounts every gallery it opens through them, and its panic fixture
+    # reads the hook's console error.
+    'replace Stories::mount with \(\)',
+    'replace log_to_console with \(\)',
+    'replace stack_with_frames -> String',
+    # theoria's own story list (`components::stories`), as the stories files.
+    'components/mod.rs:.*replace stories -> crate::Stories',
+    # theoria's browser-only code, which theoria-e2e drives in Chromium.
+    # A click's modifier keys and the control handlers' reads of the event
+    # and of the swatch's computed color run only in an `on:` handler, which
+    # a leptotes render never fires. Writing the URL and `localStorage` runs
+    # only in an `Effect`, which `ssr` does not run, and is a no-op without
+    # `csr`.
+    'components/story_nav.rs:.*replace Modifiers::of -> Self',
+    'components/controls.rs:.*replace (parse|computed_background) -> ',
+    'components/controls.rs:.*replace show with \(\)',
+    'components/gallery.rs:.*replace (show_in_url|replace_url|save_selected) with \(\)',
+    'components/gallery.rs:.*replace storage -> ',
+    # Reading them is equivalent without `csr`: `story_in_url` and
+    # `location` are `None` there already, and the other values these
+    # mutants give `location` and `load_selected` name no story (no `story`
+    # key in the query, no story called "" or "xyzzy"), which opens the
+    # first story, as `None` does. The other `story_in_url` mutants name a
+    # missing story, which the gallery tests catch.
+    'components/gallery.rs:.*replace story_in_url -> Option<String> with None',
+    'components/gallery.rs:.*replace location -> ',
+    'components/gallery.rs:.*replace load_selected -> ',
 ]
