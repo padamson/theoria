@@ -54,6 +54,10 @@
   comment as Markdown. `#[story_arg(color)]` on a `&'static str` field
   makes it a color, and on the struct makes every field written
   `&'static str` one (a type alias for it is not seen there). `#[story_arg(skip)]` keeps a field at its default with no control.
+  A field whose type also derives `StoryArg` (a `Palette` inside a
+  `Theme`) is a group of its own fields under the field's name, with the
+  field's doc comment, and takes its options from its own struct: the
+  outer struct's `color` does not reach into it.
   A field of any other type is a compile error at the field ("a field of
   type `u32` has no control"), and so is `color` on a field that is not a
   `&'static str`. An edited `&'static str` is leaked once per distinct
@@ -63,7 +67,8 @@
   derive(theoria::StoryArg))]` and `#[cfg_attr(feature = "stories",
   story_arg(color))]`. A field's control is reached as
   `story.arg("theme")`'s `ArgControl::Group(fields)`, then
-  `fields.arg("paper")`.
+  `fields.arg("paper")`, and a nested group's the same way again
+  (`fields.arg("palette")`'s `ArgControl::Group`).
 - A `T` parameter is read inside the generated view closure, so an edit to
   it runs the whole body again (and resets any signal the body creates). A
   `Signal<T>` parameter is the arg's signal, the same one on every run,

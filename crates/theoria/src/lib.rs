@@ -591,15 +591,15 @@ pub mod __private {
     #[diagnostic::on_unimplemented(
         message = "a field of type `{Self}` has no control",
         label = "no control for this field's type",
-        note = "a StoryArg field is a bool, f64, String, &'static str, Bounded, Color, or Choice; `#[story_arg(skip)]` keeps its value"
+        note = "a StoryArg field is a bool, f64, String, &'static str, Bounded, Color, or Choice, or a struct that derives StoryArg; `#[story_arg(skip)]` keeps its value"
     )]
     pub trait Field: Sized + Send + Sync + 'static {
         fn field(name: &'static str, ty: &'static str, start: Self) -> (Signal<Self>, Arg);
     }
 
-    impl<T: Leaf> Field for T {
+    impl<T: Plain> Field for T {
         fn field(name: &'static str, ty: &'static str, start: Self) -> (Signal<Self>, Arg) {
-            leaf(name, ty, start)
+            T::arg(name, ty, start)
         }
     }
 
@@ -695,7 +695,9 @@ pub mod __private {
 /// `&'static str` a text box. Each field's doc comment is shown with its
 /// control. `#[story_arg(color)]` makes a `&'static str` field a color, and
 /// on the struct makes every field written `&'static str` one. An edited
-/// `&'static str` is leaked once per distinct text.
+/// `&'static str` is leaked once per distinct text. A field whose type
+/// derives `StoryArg` too is a group of its own fields, under the field's
+/// name.
 ///
 /// ```
 /// use leptos::prelude::*;
@@ -1983,20 +1985,28 @@ mod derive_tests {
         view! { <p>{card.heading}</p> }
     }
 
-    fn group_of(story: &Story, arg: &str) -> GroupControl {
-        let ArgControl::Group(group) = story.arg(arg).expect("the arg").control() else {
-            panic!("`{arg}` did not get a group of controls");
+    fn group(arg: Arg) -> GroupControl {
+        let ArgControl::Group(group) = arg.control() else {
+            panic!("`{}` did not get a group of controls", arg.name());
         };
         group
     }
 
-    /// The `card` arg's field called `name`.
-    fn field(story: &Story, name: &str) -> Arg {
-        let group = group_of(story, "card");
+    fn group_of(story: &Story, arg: &str) -> GroupControl {
+        group(story.arg(arg).expect("the arg"))
+    }
+
+    /// The field of `group` called `name`.
+    fn field_of(group: GroupControl, name: &str) -> Arg {
         group.arg(name).unwrap_or_else(|| {
             let names: Vec<_> = group.args().iter().map(Arg::name).collect();
             panic!("no field `{name}`; fields: {names:?}")
         })
+    }
+
+    /// The `card` arg's field called `name`.
+    fn field(story: &Story, name: &str) -> Arg {
+        field_of(group_of(story, "card"), name)
     }
 
     fn color(story: &Story, name: &str) -> RwSignal<Color> {
@@ -2286,6 +2296,129 @@ mod derive_tests {
     fn a_fields_type_is_as_the_struct_wrote_it() {
         Owner::new().with(|| {
             assert_eq!(field(&card(), "heading").ty(), "&'static str");
+        });
+    }
+
+    #[derive(Clone, StoryArg)]
+    struct Shade {
+        #[story_arg(color)]
+        ink: &'static str,
+        depth: f64,
+    }
+
+    #[derive(Clone, StoryArg)]
+    struct Layered {
+        label: String,
+        /// The heading's look.
+        shade: Shade,
+    }
+
+    fn layers() -> Layered {
+        Layered {
+            label: "Patio".to_string(),
+            shade: Shade {
+                ink: "#243832",
+                depth: 2.0,
+            },
+        }
+    }
+
+    #[story(layered = layers())]
+    fn layered(layered: Signal<Layered>) -> impl IntoView {
+        view! {
+            <p style:color=move || layered.get().shade.ink data-depth=move || layered.get().shade.depth>
+                {move || layered.get().label}
+            </p>
+        }
+    }
+
+    /// The `shade` field of the `layered` arg, as a group.
+    fn shade(story: &Story) -> GroupControl {
+        group(field_of(group_of(story, "layered"), "shade"))
+    }
+
+    fn depth(story: &Story) -> RwSignal<f64> {
+        let ArgControl::Num(depth) = field_of(shade(story), "depth").control() else {
+            panic!("`depth` did not get the number control");
+        };
+        depth
+    }
+
+    #[test]
+    fn a_field_that_derives_story_arg_is_a_group_of_its_fields() {
+        Owner::new().with(|| {
+            let names: Vec<_> = shade(&layered()).args().iter().map(Arg::name).collect();
+            assert_eq!(names, ["ink", "depth"]);
+        });
+    }
+
+    #[test]
+    fn a_nested_structs_color_field_is_a_color() {
+        Owner::new().with(|| {
+            let ink = field_of(shade(&layered()), "ink");
+            assert!(matches!(ink.control(), ArgControl::Color(_)));
+        });
+    }
+
+    #[derive(Clone, StoryArg)]
+    struct Caption {
+        text: &'static str,
+    }
+
+    #[derive(Clone, StoryArg)]
+    #[story_arg(color)]
+    struct Inked {
+        ink: &'static str,
+        caption: Caption,
+    }
+
+    #[story(inked = Inked { ink: "#243832", caption: Caption { text: "Patio" } })]
+    fn inked(inked: Inked) -> impl IntoView {
+        view! { <p style:color=inked.ink>{inked.caption.text}</p> }
+    }
+
+    #[test]
+    fn color_on_a_struct_does_not_reach_into_a_nested_one() {
+        Owner::new().with(|| {
+            let caption = group(field_of(group_of(&inked(), "inked"), "caption"));
+            let text = field_of(caption, "text");
+            assert!(matches!(text.control(), ArgControl::Text(_)));
+        });
+    }
+
+    #[test]
+    fn a_nested_group_starts_at_its_fields_defaults() {
+        let dom = leptotes::dom(|| layered().view());
+        assert_eq!(dom.find("p").attr("data-depth"), Some("2"), "{dom}");
+    }
+
+    #[test]
+    fn an_edit_inside_a_nested_group_reaches_the_story() {
+        let dom = leptotes::dom(|| {
+            let story = layered();
+            depth(&story).set(3.5);
+            story.view()
+        });
+        assert_eq!(dom.find("p").attr("data-depth"), Some("3.5"), "{dom}");
+    }
+
+    #[test]
+    fn a_reset_puts_a_nested_groups_fields_back() {
+        Owner::new().with(|| {
+            let story = layered();
+            depth(&story).set(3.5);
+            story.arg("layered").unwrap().reset();
+            assert_eq!(depth(&story).get_untracked(), 2.0);
+        });
+    }
+
+    #[test]
+    fn a_nested_groups_doc_comment_is_its_description() {
+        Owner::new().with(|| {
+            assert_eq!(
+                field_of(group_of(&layered(), "layered"), "shade").description(),
+                Some("The heading's look.")
+            );
         });
     }
 }

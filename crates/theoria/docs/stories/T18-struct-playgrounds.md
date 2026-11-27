@@ -36,7 +36,7 @@ settle on can be pasted into the site.
   - [x] a field whose type has no control is a compile error at the field,
         unless it is `#[story_arg(skip)]`, which keeps its default
 - **T18.3 — groups**
-  - [ ] a field whose type derives `StoryArg` is a group of controls under
+  - [x] a field whose type derives `StoryArg` is a group of controls under
         the field's name
   - [ ] an `Option` of one is a group with a switch: off is `None`, and on
         again brings back the fields as they were left

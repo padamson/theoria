@@ -35,7 +35,8 @@ gates, and `skills/theoria-usage/` is what a consumer reads.
   through `value_arg!`), not a change to the macro, and an unsupported type
   is a rustc trait error at the parameter. `#[derive(StoryArg)]`, beside `#[story]`,
   implements `Plain` for a struct as an `Arg::group` of one arg per
-  field, each through `__private::Field` (every `Leaf`, and `&'static str`)
+  field, each through `__private::Field` (every `Plain`, so a field whose type
+  derives `StoryArg` is a nested group, and `&'static str`)
   or `ColorField`. Those traits are public under the `#[doc(hidden)]`
   `__private` only so the derive can name them from another crate.
 - `crates/theoria-cli`: the `theoria` binary, whose `main` only calls the

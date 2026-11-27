@@ -22,7 +22,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, ensure};
 use axum::Router;
 use playwright_rs::protocol::click::KeyboardModifier;
-use playwright_rs::protocol::{Locator, Page, Playwright, SelectOption};
+use playwright_rs::protocol::{
+    AriaRole, GetByRoleOptions, Locator, Page, Playwright, SelectOption,
+};
 use playwright_rs::{ClickOptions, expect, expect_page};
 use serde::Deserialize;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -1247,6 +1249,31 @@ async fn a_field_typed_into_under_its_structs_name_reaches_the_story() -> Result
             .to_have_text("Porch")
             .await
             .context("the title reaches the stage")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_field_typed_into_inside_a_nested_group_reaches_the_story() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · struct").await?;
+        page.locator(
+            r#".theoria-panel [role=group][aria-label="card"] [role=group][aria-label="border"]"#,
+        )
+        .get_by_role(
+            AriaRole::Spinbutton,
+            Some(GetByRoleOptions::default().name("width").exact(true)),
+        )
+        .fill("4", None)
+        .await
+        .context("type a width into the card's border group")?;
+        expect(page.locator(".theoria-stage .k-card"))
+            .to_have_css("border-top-width", "4px")
+            .await
+            .context("the border's width reaches the stage")?;
 
         Ok(())
     })

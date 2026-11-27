@@ -111,12 +111,25 @@ struct Card {
     bold: bool,
     /// Corner radius, in `rem`.
     radius: Bounded,
+    /// The line around the card.
+    border: Border,
+}
+
+/// A line's look, as a struct that is a field of `Card`.
+#[derive(Clone, StoryArg)]
+struct Border {
+    /// The line's color, any CSS color.
+    #[story_arg(color)]
+    color: &'static str,
+    /// Its width, in `px`.
+    width: Bounded,
 }
 
 /// A **struct** arg: `Card` derives `StoryArg`, so each of its fields gets
 /// the control its type picks, under the arg's name, with the field's doc
 /// comment beside it. A `&'static str` field is a text box, or a color with
-/// `#[story_arg(color)]`.
+/// `#[story_arg(color)]`. A field whose type derives `StoryArg` too, such as
+/// `border`, is a group of its own fields under its name.
 #[story(
     name = "Knobs · struct",
     card = Card {
@@ -125,6 +138,7 @@ struct Card {
         paper: "#f6f1e7",
         bold: true,
         radius: Bounded::new(0.5).min(0.0).max(2.0).step(0.125),
+        border: Border { color: "#c9bfa8", width: Bounded::new(1.0).min(0.0).max(8.0).step(1.0) },
     },
 )]
 fn knobs_struct(card: Signal<Card>) -> impl IntoView {
@@ -134,6 +148,10 @@ fn knobs_struct(card: Signal<Card>) -> impl IntoView {
             style="width: 10rem; padding: 0.75rem"
             style:background=move || card.get().paper
             style:border-radius=move || format!("{}rem", card.get().radius.value())
+            style:border=move || {
+                let border = card.get().border;
+                format!("{}px solid {}", border.width.value(), border.color)
+            }
         >
             <p
                 class="k-title"

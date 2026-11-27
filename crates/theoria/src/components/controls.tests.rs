@@ -402,6 +402,29 @@ fn a_group_draws_a_control_per_arg_inside_it() {
 }
 
 #[test]
+fn a_group_inside_a_group_is_drawn_inside_it_under_its_name() {
+    let dom = leptotes::dom(|| {
+        let border = Arg::group(
+            "border",
+            "Border",
+            vec![Arg::new("width", "f64", RwSignal::new(1.0))],
+        );
+        let card = Arg::group(
+            "card",
+            "Card",
+            vec![Arg::new("raised", "bool", RwSignal::new(true)), border],
+        );
+        view! { <Controls args=vec![card] /> }
+    });
+    assert_eq!(
+        dom.find("[role=group][aria-label=card] [role=group]")
+            .attr("aria-label"),
+        Some("border"),
+        "{dom}"
+    );
+}
+
+#[test]
 fn a_group_shows_its_type() {
     let dom = group_control();
     assert_eq!(
