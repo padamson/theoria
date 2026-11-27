@@ -31,7 +31,9 @@ use syn::{
 pub fn story(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Thin adapter to the testable `proc_macro2` core; all logic lives in
     // `story_impl`.
-    story_impl(attr.into(), item.into()).into()
+    story_impl(attr.into(), item.into())
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
 }
 
 /// A struct that derives `StoryArg` is a `#[story]` arg with a control per
@@ -44,15 +46,9 @@ pub fn derive_story_arg(item: TokenStream) -> TokenStream {
         .into()
 }
 
-fn story_impl(attr: TokenStream2, item: TokenStream2) -> TokenStream2 {
-    let func: ItemFn = match syn::parse2(item) {
-        Ok(func) => func,
-        Err(e) => return e.to_compile_error(),
-    };
-    let overrides = match Punctuated::<Meta, Token![,]>::parse_terminated.parse2(attr) {
-        Ok(overrides) => overrides,
-        Err(e) => return e.to_compile_error(),
-    };
+fn story_impl(attr: TokenStream2, item: TokenStream2) -> syn::Result<TokenStream2> {
+    let func: ItemFn = syn::parse2(item)?;
+    let overrides = Punctuated::<Meta, Token![,]>::parse_terminated.parse2(attr)?;
 
     let params: HashSet<String> = func.sig.inputs.iter().filter_map(param_name).collect();
 
@@ -62,8 +58,10 @@ fn story_impl(attr: TokenStream2, item: TokenStream2) -> TokenStream2 {
     let mut defaults: HashMap<String, Expr> = HashMap::new();
     for meta in overrides {
         let Meta::NameValue(nv) = meta else {
-            return syn::Error::new_spanned(meta, "a #[story] entry is written `key = value`")
-                .to_compile_error();
+            return Err(syn::Error::new_spanned(
+                meta,
+                "a #[story] entry is written `key = value`",
+            ));
         };
         let key = nv
             .path
@@ -74,11 +72,10 @@ fn story_impl(attr: TokenStream2, item: TokenStream2) -> TokenStream2 {
         } else if params.contains(&key) {
             defaults.insert(key, nv.value);
         } else {
-            return syn::Error::new_spanned(
+            return Err(syn::Error::new_spanned(
                 &nv.path,
                 format!("`{key}` is not a parameter of this story"),
-            )
-            .to_compile_error();
+            ));
         }
     }
 
@@ -89,16 +86,12 @@ fn story_impl(attr: TokenStream2, item: TokenStream2) -> TokenStream2 {
     });
     let description = doc_description(&func.attrs);
 
-    let args = match func
+    let args = func
         .sig
         .inputs
         .iter()
         .map(|input| story_arg(input, &defaults))
-        .collect::<syn::Result<Vec<_>>>()
-    {
-        Ok(args) => args,
-        Err(e) => return e.to_compile_error(),
-    };
+        .collect::<syn::Result<Vec<_>>>()?;
     let sig_lets = args.iter().map(|a| &a.sig_let);
     let get_lets = args.iter().map(|a| &a.get_let);
     let arg_entries = args.iter().map(|a| &a.entry);
@@ -106,7 +99,7 @@ fn story_impl(attr: TokenStream2, item: TokenStream2) -> TokenStream2 {
     let body = &func.block;
     let source = body_source(&func);
 
-    quote! {
+    Ok(quote! {
         pub fn #fname() -> theoria::Story {
             #[allow(unused_imports)]
             use leptos::prelude::*;
@@ -123,7 +116,7 @@ fn story_impl(attr: TokenStream2, item: TokenStream2) -> TokenStream2 {
                 #description,
             )
         }
-    }
+    })
 }
 
 fn param_name(input: &FnArg) -> Option<String> {
@@ -506,89 +499,33 @@ mod tests {
     use super::*;
     use quote::quote;
 
-    /// Pull the string out of a `doc_description` result: `Option::Some("lit")`
-    /// → `Some(lit)`, the `Option::None` path → `None`.
-    fn some_str(e: &Expr) -> Option<String> {
-        if let Expr::Call(call) = e
-            && let Some(Expr::Lit(syn::ExprLit {
-                lit: Lit::Str(s), ..
-            })) = call.args.first()
-        {
-            Some(s.value())
-        } else {
-            None
-        }
-    }
-
     #[test]
-    fn story_impl_generates_a_story_constructor() {
-        let out = story_impl(
-            quote!(name = "Demo/Widget", active = true, width = 12.0),
-            quote! {
-                /// A demo widget.
-                fn widget(active: bool, width: f64, label: String) -> impl IntoView {
-                    view! { <div data-active=active data-width=width>{label}</div> }
-                }
-            },
-        )
-        .to_string();
-
-        assert!(
-            out.contains("pub fn widget"),
-            "emits a constructor named after the fn"
-        );
-        assert!(
-            out.contains("__from_macro"),
-            "builds via Story::__from_macro"
-        );
-        assert!(out.contains("Demo/Widget"), "uses the name override");
-        for ty in ["bool", "f64", "String"] {
-            assert!(
-                out.contains(&format!("< {ty} as theoria :: StoryArg >")),
-                "the {ty} arg's control comes from its StoryArg impl; got:\n{out}"
-            );
-        }
-        assert!(out.contains("Some"), "captures the doc description");
-    }
-
-    #[test]
-    fn story_impl_falls_back_to_the_fn_name_without_an_override() {
-        let out =
-            story_impl(quote!(), quote! { fn yard() -> impl IntoView { view! {} } }).to_string();
-        // No `name = "..."`, so the story name is the fn ident as a string literal.
-        assert!(out.contains("\"yard\""), "no override → use the fn name");
-    }
-
-    #[test]
-    fn story_impl_rejects_self_receivers() {
-        let out = story_impl(
+    fn a_self_receiver_is_refused() {
+        let err = story_impl(
             quote!(),
             quote! { fn bad(&self) -> impl IntoView { view! {} } },
         )
-        .to_string();
-        assert!(
-            out.contains("compile_error"),
-            "a self receiver → compile error"
-        );
+        .expect_err("a self receiver");
+        assert!(err.to_string().contains("self"), "got: {err}");
     }
 
     #[test]
-    fn doc_description_joins_lines_with_newlines() {
+    fn a_doc_comments_lines_are_joined_with_newlines() {
         let f: ItemFn = syn::parse_quote! {
             /// First line.
             /// Second line.
             fn x() -> impl IntoView { view! {} }
         };
         assert_eq!(
-            some_str(&doc_description(&f.attrs)).as_deref(),
-            Some("First line.\nSecond line."),
+            doc_text(&f.attrs).as_deref(),
+            Some("First line.\nSecond line.")
         );
     }
 
     #[test]
-    fn doc_description_is_none_without_docs() {
+    fn no_doc_comment_is_no_description() {
         let f: ItemFn = syn::parse_quote! { fn x() -> impl IntoView { view! {} } };
-        assert_eq!(some_str(&doc_description(&f.attrs)), None);
+        assert_eq!(doc_text(&f.attrs), None);
     }
 
     #[test]
@@ -621,44 +558,30 @@ mod tests {
         assert_eq!(join_tokens(quote!(Signal<#undelimited>)), "Signal<f64>");
     }
 
-    fn expand(attr: TokenStream2, params: &TokenStream2) -> String {
-        story_impl(attr, quote! { fn x(#params) -> impl IntoView { view! {} } }).to_string()
+    /// The error `#[story]` gives a story with `params`, which must be refused.
+    fn refused_story(attr: TokenStream2, params: &TokenStream2) -> String {
+        match story_impl(attr, quote! { fn x(#params) -> impl IntoView { view! {} } }) {
+            Ok(out) => panic!("accepted; got:\n{out}"),
+            Err(e) => e.to_string(),
+        }
     }
 
     #[test]
-    fn a_default_for_a_parameter_the_story_has_is_accepted() {
-        let out = expand(quote!(width = 12.0), &quote!(width: f64));
-        assert!(!out.contains("compile_error"), "got: {out}");
+    fn a_default_for_a_parameter_the_story_lacks_is_refused_by_its_key() {
+        let err = refused_story(quote!(widht = 12.0), &quote!(width: f64));
+        assert!(err.contains("`widht`"), "got: {err}");
     }
 
     #[test]
-    fn a_default_for_a_parameter_the_story_lacks_is_rejected() {
-        let out = expand(quote!(widht = 12.0), &quote!(width: f64));
-        assert!(out.contains("compile_error"), "got: {out}");
+    fn an_attribute_entry_with_no_value_is_refused_with_the_form_it_takes() {
+        let err = refused_story(quote!(active), &quote!(active: bool));
+        assert!(err.contains("`key = value`"), "got: {err}");
     }
 
     #[test]
-    fn the_error_for_a_stray_default_names_its_key() {
-        let out = expand(quote!(widht = 12.0), &quote!(width: f64));
-        assert!(out.contains("`widht`"), "got: {out}");
-    }
-
-    #[test]
-    fn an_attribute_entry_with_no_value_is_rejected() {
-        let out = expand(quote!(active), &quote!(active: bool));
-        assert!(out.contains("compile_error"), "got: {out}");
-    }
-
-    #[test]
-    fn a_parameter_called_name_is_rejected() {
-        let out = expand(quote!(), &quote!(name: String));
-        assert!(out.contains("compile_error"), "got: {out}");
-    }
-
-    #[test]
-    fn a_name_in_the_attribute_is_not_taken_for_a_stray_default() {
-        let out = expand(quote!(name = "Demo/Width"), &quote!(width: f64));
-        assert!(!out.contains("compile_error"), "got: {out}");
+    fn a_parameter_called_name_is_refused() {
+        let err = refused_story(quote!(), &quote!(name: String));
+        assert!(err.contains("`name`"), "got: {err}");
     }
 
     #[test]
@@ -667,12 +590,6 @@ mod tests {
             param_name(&syn::parse_quote!(r#type: String)).as_deref(),
             Some("type")
         );
-    }
-
-    #[test]
-    fn a_default_keyed_by_a_raw_identifier_is_accepted() {
-        let out = expand(quote!(r#type = "button"), &quote!(r#type: String));
-        assert!(!out.contains("compile_error"), "got: {out}");
     }
 
     #[test]

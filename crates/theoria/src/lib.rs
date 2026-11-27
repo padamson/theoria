@@ -1432,6 +1432,26 @@ mod story_macro_tests {
     }
 
     #[test]
+    fn a_default_keyed_by_a_raw_identifier_is_the_args_starting_value() {
+        Owner::new().with(|| {
+            let ArgControl::Text(text) = arg(&raw_named(), "type").control() else {
+                panic!("`r#type: String` did not get the text control");
+            };
+            assert_eq!(text.get_untracked(), "button");
+        });
+    }
+
+    #[test]
+    fn without_a_name_in_the_attribute_a_story_is_named_for_its_fn() {
+        Owner::new().with(|| assert_eq!(inferred_defaults().name(), "inferred_defaults"));
+    }
+
+    #[test]
+    fn a_story_without_a_doc_comment_has_no_description() {
+        Owner::new().with(|| assert_eq!(inferred_defaults().description(), None));
+    }
+
+    #[test]
     fn a_story_arg_resets_to_the_default_in_its_attribute() {
         Owner::new().with(|| {
             let story = widget();
