@@ -947,7 +947,7 @@ impl Story {
     }
 
     /// The story's body, drawn with its args' current values. Call it inside
-    /// a reactive `Owner`, such as the one a leptotes `render` closure runs
+    /// a reactive `Owner`, such as the one a leptotes `dom` closure runs
     /// in. A test can set an arg and draw the story, to check what the arg
     /// feeds:
     ///
@@ -960,7 +960,7 @@ impl Story {
     ///     view! { <p style:color=move || ink.get().to_string()>"Ink"</p> }
     /// }
     ///
-    /// let html = leptotes::render(|| {
+    /// let dom = leptotes::dom(|| {
     ///     let story = swatch();
     ///     let ArgControl::Color(ink) = story.arg("ink").unwrap().control() else {
     ///         panic!("`ink` did not get the color control");
@@ -968,7 +968,7 @@ impl Story {
     ///     ink.set(Color::from("rebeccapurple"));
     ///     story.view()
     /// });
-    /// assert!(html.contains("color:rebeccapurple"), "got: {html}");
+    /// assert_eq!(dom.find("p").attr("style"), Some("color:rebeccapurple;"));
     /// ```
     #[must_use]
     pub fn view(&self) -> AnyView {
@@ -1124,8 +1124,8 @@ mod story_tests {
 
     #[test]
     fn view_draws_the_story_body() {
-        let html = leptotes::render(|| Story::new("A", || view! { <p>"hi"</p> }).view());
-        assert!(html.contains("<p>hi</p>"), "got: {html}");
+        let dom = leptotes::dom(|| Story::new("A", || view! { <p>"hi"</p> }).view());
+        assert_eq!(dom.find("p").text(), "hi", "{dom}");
     }
 }
 
@@ -1149,41 +1149,68 @@ mod story_macro_tests {
     }
 
     #[test]
-    fn story_macro_captures_name_args_source_and_description() {
-        let owner = Owner::new();
-        owner.with(|| {
-            let s = widget();
-            assert_eq!(s.name(), "Demo/Widget", "name override");
-            assert_eq!(s.description(), Some("A demo widget for the macro test."));
+    fn a_name_in_the_attribute_is_the_storys_name() {
+        Owner::new().with(|| assert_eq!(widget().name(), "Demo/Widget"));
+    }
 
-            let args = s.args();
-            assert_eq!(args.len(), 3, "one control per typed param");
-            assert_eq!(args[0].name(), "active");
-            assert_eq!(args[1].name(), "width");
-            assert_eq!(args[2].name(), "label");
-            let [active, width, label] = [0, 1, 2].map(|i| args[i].control());
-            assert!(matches!(active, ArgControl::Bool(_)), "bool → toggle");
-            assert!(matches!(width, ArgControl::Num(_)), "f64 → number");
-            assert!(matches!(label, ArgControl::Text(_)), "String → text");
+    #[test]
+    fn the_doc_comment_is_the_storys_description() {
+        Owner::new().with(|| {
+            assert_eq!(
+                widget().description(),
+                Some("A demo widget for the macro test.")
+            );
+        });
+    }
 
-            // Defaults from the attribute (and Default for the unspecified one).
-            if let ArgControl::Bool(b) = active {
-                assert!(b.get_untracked(), "active default = true");
-            }
-            if let ArgControl::Num(n) = width {
-                assert!(
-                    (n.get_untracked() - 12.0).abs() < 1e-9,
-                    "width default = 12.0"
-                );
-            }
-            if let ArgControl::Text(t) = label {
-                assert!(t.get_untracked().is_empty(), "label default = \"\"");
-            }
+    #[test]
+    fn each_parameter_is_an_arg_named_for_it_in_order() {
+        Owner::new().with(|| {
+            let story = widget();
+            let names: Vec<_> = story.args().iter().map(Arg::name).collect();
+            assert_eq!(names, ["active", "width", "label"]);
+        });
+    }
 
-            assert!(
-                s.source().unwrap().contains("<div"),
-                "captured body source: {:?}",
-                s.source()
+    #[test]
+    fn each_parameter_gets_the_control_its_type_picks() {
+        Owner::new().with(|| {
+            let story = widget();
+            let control = |name| arg(&story, name).control();
+            assert!(matches!(control("active"), ArgControl::Bool(_)), "bool");
+            assert!(matches!(control("width"), ArgControl::Num(_)), "f64");
+            assert!(matches!(control("label"), ArgControl::Text(_)), "String");
+        });
+    }
+
+    #[test]
+    fn a_default_in_the_attribute_is_the_args_starting_value() {
+        Owner::new().with(|| {
+            let story = widget();
+            let ArgControl::Bool(active) = arg(&story, "active").control() else {
+                panic!("`active: bool` did not get the toggle");
+            };
+            assert!(active.get_untracked(), "`active` started off");
+            assert_eq!(width_control(&story).get_untracked(), 12.0);
+        });
+    }
+
+    #[test]
+    fn an_arg_without_a_default_starts_at_its_types_default() {
+        Owner::new().with(|| {
+            let ArgControl::Text(label) = arg(&widget(), "label").control() else {
+                panic!("`label: String` did not get the text control");
+            };
+            assert_eq!(label.get_untracked(), "");
+        });
+    }
+
+    #[test]
+    fn a_storys_source_is_its_body_as_written() {
+        Owner::new().with(|| {
+            assert_eq!(
+                bounded_radius().source(),
+                Some("view! { <p>{radius.value()}</p> }")
             );
         });
     }
@@ -1320,22 +1347,27 @@ mod story_macro_tests {
         control
     }
 
+    /// What the `build` story draws, after its control selects `pick`.
+    fn build_drawn_after(pick: Option<usize>) -> String {
+        leptotes::dom(|| {
+            let story = build();
+            if let Some(pick) = pick {
+                choice_control(&story, "build").select(pick);
+            }
+            story.view()
+        })
+        .find("p")
+        .text()
+    }
+
     #[test]
     fn a_choice_arg_starts_at_the_option_its_attribute_selects() {
-        Owner::new().with(|| {
-            let html = build().view().to_html();
-            assert!(html.contains(">0.13.0<"), "got: {html}");
-        });
+        assert_eq!(build_drawn_after(None), "0.13.0");
     }
 
     #[test]
     fn selecting_an_option_gives_the_story_its_value() {
-        Owner::new().with(|| {
-            let story = build();
-            choice_control(&story, "build").select(2);
-            let html = story.view().to_html();
-            assert!(html.contains(">0.14.0<"), "got: {html}");
-        });
+        assert_eq!(build_drawn_after(Some(2)), "0.14.0");
     }
 
     #[test]
@@ -1349,12 +1381,7 @@ mod story_macro_tests {
 
     #[test]
     fn selecting_past_the_last_option_keeps_the_storys_value() {
-        Owner::new().with(|| {
-            let story = build();
-            choice_control(&story, "build").select(3);
-            let html = story.view().to_html();
-            assert!(html.contains(">0.13.0<"), "got: {html}");
-        });
+        assert_eq!(build_drawn_after(Some(3)), "0.13.0");
     }
 
     static CHOICE_BODY_RUNS: AtomicUsize = AtomicUsize::new(0);
@@ -1521,8 +1548,8 @@ mod story_macro_tests {
 
     #[test]
     fn a_mut_parameter_is_mutable_in_the_body() {
-        let html = leptotes::render(|| shouts().view());
-        assert!(html.contains("hi!"), "got:\n{html}");
+        let dom = leptotes::dom(|| shouts().view());
+        assert_eq!(dom.find("p").text(), "hi!", "{dom}");
     }
 
     /// Compiles only if the type has no `StoryArg` impl: with one, both impls
@@ -2057,45 +2084,51 @@ mod derive_tests {
 
     #[test]
     fn a_struct_arg_starts_at_the_default_in_its_attribute() {
-        let html = leptotes::render(|| card().view());
-        assert!(html.contains(">Yard<"), "got: {html}");
+        let dom = leptotes::dom(|| card().view());
+        assert_eq!(dom.find("p").text(), "Yard", "{dom}");
     }
 
     #[test]
     fn an_edit_to_a_field_reaches_a_story_that_takes_the_signal() {
-        let html = leptotes::render(|| {
+        let dom = leptotes::dom(|| {
             let story = card();
             text(&story, "heading").set("Porch".to_string());
             story.view()
         });
-        assert!(html.contains(">Porch<"), "got: {html}");
+        assert_eq!(dom.find("p").text(), "Porch", "{dom}");
     }
 
     #[test]
     fn an_edit_to_a_color_field_reaches_the_story() {
-        let html = leptotes::render(|| {
+        let dom = leptotes::dom(|| {
             let story = card();
             let ink = color(&story, "ink");
             ink.set(Color::from("rebeccapurple"));
             story.view()
         });
-        assert!(html.contains("color:rebeccapurple"), "got: {html}");
+        assert_eq!(
+            dom.find("p")
+                .attr("style")
+                .map(|style| style.trim_end_matches(';')),
+            Some("color:rebeccapurple"),
+            "{dom}"
+        );
     }
 
     #[test]
     fn an_edit_to_a_field_reaches_a_story_that_takes_the_value() {
-        let html = leptotes::render(|| {
+        let dom = leptotes::dom(|| {
             let story = card_as_value();
             text(&story, "heading").set("Porch".to_string());
             story.view()
         });
-        assert!(html.contains(">Porch<"), "got: {html}");
+        assert_eq!(dom.find("p").text(), "Porch", "{dom}");
     }
 
     #[test]
     fn a_skipped_field_keeps_its_default() {
-        let html = leptotes::render(|| card().view());
-        assert!(html.contains(r#"data-version="7""#), "got: {html}");
+        let dom = leptotes::dom(|| card().view());
+        assert_eq!(dom.find("p").attr("data-version"), Some("7"), "{dom}");
     }
 
     /// A struct that implements `Drop` refuses a move out of its fields.
@@ -2115,8 +2148,8 @@ mod derive_tests {
 
     #[test]
     fn a_struct_that_implements_drop_starts_at_its_default() {
-        let html = leptotes::render(|| dropped().view());
-        assert!(html.contains("Patio"), "got: {html}");
+        let dom = leptotes::dom(|| dropped().view());
+        assert_eq!(dom.find("p").text(), "Patio", "{dom}");
     }
 
     // Denied here so that a local the derive names after a field fails the
