@@ -5,7 +5,7 @@
 use leptos::prelude::*;
 
 use super::Controls;
-use crate::{Arg, Bounded, Choice, Color, Story, story};
+use crate::{Arg, Bounded, Choice, Color, Story, StoryArg, story};
 
 /// A **knobs** demo: edit the controls and watch the stage update live.
 ///
@@ -96,6 +96,56 @@ fn knobs_labelled_choice(font: Choice<&'static str>) -> impl IntoView {
     view! { <p class="k-font" style:font-family=font>{font}</p> }
 }
 
+/// A card's look, as a struct whose fields are the controls.
+#[derive(Clone, StoryArg)]
+struct Card {
+    /// The card's heading.
+    title: &'static str,
+    /// The heading's color, any CSS color.
+    #[story_arg(color)]
+    ink: &'static str,
+    /// The card's background.
+    #[story_arg(color)]
+    paper: &'static str,
+    /// Bold heading.
+    bold: bool,
+    /// Corner radius, in `rem`.
+    radius: Bounded,
+}
+
+/// A **struct** arg: `Card` derives `StoryArg`, so each of its fields gets
+/// the control its type picks, under the arg's name, with the field's doc
+/// comment beside it. A `&'static str` field is a text box, or a color with
+/// `#[story_arg(color)]`.
+#[story(
+    name = "Knobs · struct",
+    card = Card {
+        title: "Patio",
+        ink: "#243832",
+        paper: "#f6f1e7",
+        bold: true,
+        radius: Bounded::new(0.5).min(0.0).max(2.0).step(0.125),
+    },
+)]
+fn knobs_struct(card: Signal<Card>) -> impl IntoView {
+    view! {
+        <div
+            class="k-card"
+            style="width: 10rem; padding: 0.75rem"
+            style:background=move || card.get().paper
+            style:border-radius=move || format!("{}rem", card.get().radius.value())
+        >
+            <p
+                class="k-title"
+                style:color=move || card.get().ink
+                style:font-weight=move || if card.get().bold { "700" } else { "400" }
+            >
+                {move || card.get().title}
+            </p>
+        </div>
+    }
+}
+
 pub fn stories() -> Vec<Story> {
     vec![
         knobs(),
@@ -104,6 +154,7 @@ pub fn stories() -> Vec<Story> {
         knobs_color(),
         knobs_choice(),
         knobs_labelled_choice(),
+        knobs_struct(),
         // At the panel's width, with a name and a type too long for one line.
         Story::new("Controls · panel", || {
             view! {

@@ -12,9 +12,10 @@
   or blank text panics when the story is built.
 - `#[story(name = "Group/Name", arg = default, ...)]` on `fn x(arg: T,
   ...) -> impl IntoView`: generates `fn x() -> Story` with one control per
-  parameter. `T` is `bool`, `f64`, `String`, `Bounded`, `Color`, or
-  `Choice<V>`, or `Signal<T>` over one of them (the types that implement
-  `theoria::StoryArg`, which is sealed);
+  parameter. `T` is `bool`, `f64`, `String`, `Bounded`, `Color`,
+  `Choice<V>`, or a struct that derives `StoryArg`, or `Signal<T>` over
+  one of them (the types that implement `theoria::StoryArg`; implement it
+  only with the derive);
   anything else is a compile error at the parameter, "`i32` cannot be a
   #[story] arg". A default in the attribute is written as the arg's value
   (`width = 12.0` for an `f64`, not `12`), or as a `&'static str` for a
@@ -43,6 +44,26 @@
   list, or a label no option has, panics when the story is built, and a
   `Choice` arg with no list in the attribute does not compile. The body
   reads the selected value with `.value()`.
+- `#[derive(Clone, StoryArg)]` on a struct of named fields (no generic
+  parameters or where clause)
+  makes it one arg, written `theme: Theme` or `theme: Signal<Theme>`, with
+  its default in the attribute as a value of the struct (`theme = THEME`,
+  a `const` or any expression). Each field gets the control its type
+  picks, as a parameter's does, and a `&'static str` field is a text box;
+  the panel draws them under the arg's name, each with the field's doc
+  comment as Markdown. `#[story_arg(color)]` on a `&'static str` field
+  makes it a color, and on the struct makes every field written
+  `&'static str` one (a type alias for it is not seen there). `#[story_arg(skip)]` keeps a field at its default with no control.
+  A field of any other type is a compile error at the field ("a field of
+  type `u32` has no control"), and so is `color` on a field that is not a
+  `&'static str`. An edited `&'static str` is leaked once per distinct
+  text, for as long as the gallery runs, so the story needs no `Memo` or
+  `leak` of its own. In a crate whose theoria is optional, write the
+  derive and its options as `#[cfg_attr(feature = "stories",
+  derive(theoria::StoryArg))]` and `#[cfg_attr(feature = "stories",
+  story_arg(color))]`. A field's control is reached as
+  `story.arg("theme")`'s `ArgControl::Group(fields)`, then
+  `fields.arg("paper")`.
 - A `T` parameter is read inside the generated view closure, so an edit to
   it runs the whole body again (and resets any signal the body creates). A
   `Signal<T>` parameter is the arg's signal, the same one on every run,

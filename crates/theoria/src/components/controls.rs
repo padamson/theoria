@@ -6,6 +6,7 @@
 
 use leptos::prelude::*;
 
+use super::Markdown;
 use crate::{Arg, ArgControl, Bounded, ChoiceControl, Color};
 
 /// A number input's starting `value`: the arg, or none for one that is not
@@ -252,9 +253,35 @@ pub fn Controls(args: Vec<Arg>) -> impl IntoView {
     })
 }
 
-fn row(arg: Arg) -> impl IntoView {
+fn row(arg: Arg) -> AnyView {
     let (name, ty) = (arg.name(), arg.ty());
-    let widget = match arg.control() {
+    let control = arg.control();
+    let group = matches!(control, ArgControl::Group(_));
+    let body = match control {
+        ArgControl::Group(group) => {
+            let rows = group.args().into_iter().map(row).collect::<Vec<_>>();
+            view! { <div class="control-fields">{rows}</div> }.into_any()
+        }
+        control => view! { <div class="control-input">{widget(name, control)}</div> }.into_any(),
+    };
+    view! {
+        <div class="control-row" role=group.then_some("group") aria-label=group.then_some(name)>
+            <div class="control-head">
+                <span class="control-name">{name}</span>
+                <code class="control-type">{ty}</code>
+            </div>
+            {arg.description().map(|text| view! {
+                <div class="control-description"><Markdown text=text /></div>
+            })}
+            {body}
+        </div>
+    }
+    .into_any()
+}
+
+/// The editable widget for a control that is not a group.
+fn widget(name: &'static str, control: ArgControl) -> AnyView {
+    match control {
         ArgControl::Bool(s) => view! {
             <input
                 type="checkbox"
@@ -276,14 +303,6 @@ fn row(arg: Arg) -> impl IntoView {
         ArgControl::Bounded(s) => bounded_widget(name, s).into_any(),
         ArgControl::Color(s) => color_widget(name, s).into_any(),
         ArgControl::Choice(choice) => choice_widget(name, choice).into_any(),
-    };
-    view! {
-        <div class="control-row">
-            <div class="control-head">
-                <span class="control-name">{name}</span>
-                <code class="control-type">{ty}</code>
-            </div>
-            <div class="control-input">{widget}</div>
-        </div>
+        ArgControl::Group(_) => unreachable!("`row` draws a group's args"),
     }
 }

@@ -15,15 +15,16 @@
 //! ```
 //!
 //! A parameter's type picks its control through `theoria::StoryArg`; the
-//! macro emits the same code for every type.
+//! macro emits the same code for every type. `#[derive(StoryArg)]` makes a
+//! struct one such type, with a control per field.
 
 use proc_macro::TokenStream;
-use proc_macro2::{Delimiter, TokenStream as TokenStream2, TokenTree};
+use proc_macro2::{Delimiter, Span, TokenStream as TokenStream2, TokenTree};
 use quote::{ToTokens, format_ident, quote, quote_spanned};
 use std::collections::{HashMap, HashSet};
 use syn::{
-    Expr, FnArg, Ident, ItemFn, Lit, Meta, Pat, Token, Type, ext::IdentExt, parse::Parser,
-    punctuated::Punctuated, spanned::Spanned,
+    Attribute, Data, DeriveInput, Expr, FnArg, Ident, ItemFn, Lit, Meta, Pat, Token, Type,
+    ext::IdentExt, parse::Parser, punctuated::Punctuated, spanned::Spanned,
 };
 
 #[proc_macro_attribute]
@@ -31,6 +32,16 @@ pub fn story(attr: TokenStream, item: TokenStream) -> TokenStream {
     // Thin adapter to the testable `proc_macro2` core; all logic lives in
     // `story_impl`.
     story_impl(attr.into(), item.into()).into()
+}
+
+/// A struct that derives `StoryArg` is a `#[story]` arg with a control per
+/// field; theoria's `StoryArg` trait documents it.
+#[proc_macro_derive(StoryArg, attributes(story_arg))]
+pub fn derive_story_arg(item: TokenStream) -> TokenStream {
+    syn::parse2(item.into())
+        .and_then(|input| story_arg_impl(&input))
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
 }
 
 fn story_impl(attr: TokenStream2, item: TokenStream2) -> TokenStream2 {
@@ -76,7 +87,7 @@ fn story_impl(attr: TokenStream2, item: TokenStream2) -> TokenStream2 {
         let s = fname.to_string();
         syn::parse_quote!(#s)
     });
-    let description = doc_description(&func);
+    let description = doc_description(&func.attrs);
 
     let args = match func
         .sig
@@ -131,7 +142,7 @@ fn arg_name(ident: &Ident) -> String {
 
 /// What one story parameter adds to the generated constructor.
 struct ArgTokens {
-    /// Outside the view closure: the arg's signal and its read side.
+    /// Outside the view closure: the arg and the signal it feeds.
     sig_let: TokenStream2,
     /// Inside it: the parameter.
     get_let: TokenStream2,
@@ -161,7 +172,7 @@ fn story_arg(input: &FnArg, defaults: &HashMap<String, Expr>) -> syn::Result<Arg
             "a #[story] parameter cannot be called `name`, which the attribute uses for the story's name",
         ));
     }
-    let sig_ident = format_ident!("__sig_{}", ident);
+    let arg_ident = format_ident!("__arg_{}", ident);
     let read_ident = format_ident!("__read_{}", ident);
     let ty = &pt.ty;
     let label = type_label(ty);
@@ -179,14 +190,11 @@ fn story_arg(input: &FnArg, defaults: &HashMap<String, Expr>) -> syn::Result<Arg
     );
     Ok(ArgTokens {
         sig_let: quote_spanned! {span=>
-            let #sig_ident = leptos::prelude::RwSignal::new(#default);
-            let #read_ident: leptos::prelude::Signal<#arg::Value> =
-                leptos::prelude::Signal::from(#sig_ident);
+            let (#read_ident, #arg_ident) =
+                <#arg::Value as theoria::__private::Plain>::arg(#name, #label, #default);
         },
         get_let: quote_spanned!(span=> let #mutability #ident: #ty = #arg::bind(#read_ident);),
-        entry: quote_spanned!(span=>
-            theoria::Arg::new(#name, #label, #sig_ident)
-        ),
+        entry: quote!(#arg_ident),
     })
 }
 
@@ -232,9 +240,17 @@ fn join_tokens(tokens: TokenStream2) -> String {
 }
 
 /// The doc-comment lines joined into a `Some("...")` / `None` expression.
-fn doc_description(func: &ItemFn) -> Expr {
+fn doc_description(attrs: &[Attribute]) -> Expr {
+    match doc_text(attrs) {
+        Some(doc) => syn::parse_quote!(::std::option::Option::Some(#doc)),
+        None => syn::parse_quote!(::std::option::Option::None),
+    }
+}
+
+/// The doc-comment lines, trimmed and joined with newlines.
+fn doc_text(attrs: &[Attribute]) -> Option<String> {
     let mut doc = String::new();
-    for a in &func.attrs {
+    for a in attrs {
         if a.path().is_ident("doc")
             && let Meta::NameValue(nv) = &a.meta
             && let Expr::Lit(syn::ExprLit {
@@ -247,11 +263,225 @@ fn doc_description(func: &ItemFn) -> Expr {
             doc.push_str(s.value().trim());
         }
     }
-    if doc.is_empty() {
-        syn::parse_quote!(::std::option::Option::None)
-    } else {
-        syn::parse_quote!(::std::option::Option::Some(#doc))
+    (!doc.trim().is_empty()).then_some(doc)
+}
+
+/// How a field of a struct that derives `StoryArg` gets its value.
+#[derive(Debug, PartialEq)]
+enum FieldKind {
+    /// Through `theoria::__private::Field`, by its type.
+    Typed,
+    /// A `&'static str` drawn as a color.
+    Color,
+    /// No control: the start value, kept.
+    Skip,
+}
+
+/// The `#[story_arg(...)]` options on one item, each with where it was
+/// written.
+#[derive(Default)]
+struct Options {
+    color: Option<Span>,
+    skip: Option<Span>,
+}
+
+fn options(attrs: &[Attribute], on_a_field: bool) -> syn::Result<Options> {
+    let mut found = Options::default();
+    for attr in attrs.iter().filter(|a| a.path().is_ident("story_arg")) {
+        attr.parse_nested_meta(|meta| {
+            let span = meta.path.span();
+            let key = meta
+                .path
+                .get_ident()
+                .map(ToString::to_string)
+                .unwrap_or_default();
+            let slot = match key.as_str() {
+                "color" => &mut found.color,
+                "skip" if on_a_field => &mut found.skip,
+                _ => {
+                    let expected = if on_a_field {
+                        "`color` or `skip`"
+                    } else {
+                        "`color`"
+                    };
+                    return Err(meta.error(format!(
+                        "`{}` is not a story_arg option here; expected {expected}",
+                        meta.path.to_token_stream(),
+                    )));
+                }
+            };
+            if slot.replace(span).is_some() {
+                return Err(meta.error(format!("`{key}` is given twice")));
+            }
+            Ok(())
+        })?;
     }
+    Ok(found)
+}
+
+/// Whether `ty` is written `&'static str`.
+fn is_static_str(ty: &Type) -> bool {
+    let reference = match ty {
+        Type::Reference(reference) => reference,
+        Type::Group(group) => return is_static_str(&group.elem),
+        Type::Paren(paren) => return is_static_str(&paren.elem),
+        _ => return false,
+    };
+    reference.mutability.is_none()
+        && reference
+            .lifetime
+            .as_ref()
+            .is_some_and(|lifetime| lifetime.ident == "static")
+        && matches!(&*reference.elem, Type::Path(path) if path.qself.is_none() && path.path.is_ident("str"))
+}
+
+/// The struct's named fields.
+fn named_fields(input: &DeriveInput) -> syn::Result<&Punctuated<syn::Field, Token![,]>> {
+    if !input.generics.params.is_empty() {
+        return Err(syn::Error::new_spanned(
+            &input.generics,
+            "derive(StoryArg) takes a struct with no generic parameters",
+        ));
+    }
+    if let Some(clause) = &input.generics.where_clause {
+        return Err(syn::Error::new_spanned(
+            clause,
+            "derive(StoryArg) takes a struct with no where clause",
+        ));
+    }
+    match &input.data {
+        Data::Struct(syn::DataStruct {
+            fields: syn::Fields::Named(fields),
+            ..
+        }) => Ok(&fields.named),
+        _ => Err(syn::Error::new_spanned(
+            &input.ident,
+            "derive(StoryArg) takes a struct with named fields",
+        )),
+    }
+}
+
+/// How each field gets its value, from the struct's and the fields'
+/// `#[story_arg(...)]` options.
+fn field_kinds(
+    input: &DeriveInput,
+    fields: &Punctuated<syn::Field, Token![,]>,
+) -> syn::Result<Vec<FieldKind>> {
+    let ident = &input.ident;
+    let every_str_a_color = options(&input.attrs, false)?.color;
+    let mut kinds = Vec::new();
+    let mut colors_a_str = false;
+    for field in fields {
+        let found = options(&field.attrs, true)?;
+        let name = field.ident.as_ref().map_or_else(String::new, arg_name);
+        kinds.push(match (found.color, found.skip) {
+            (Some(_), Some(skip)) => {
+                return Err(syn::Error::new(
+                    skip,
+                    format!("`{name}` is skipped, so it cannot also be a color"),
+                ));
+            }
+            (Some(color), None) if every_str_a_color.is_some() && is_static_str(&field.ty) => {
+                return Err(syn::Error::new(
+                    color,
+                    format!("`{name}` is already a color, from the struct's #[story_arg(color)]"),
+                ));
+            }
+            (Some(_), None) => FieldKind::Color,
+            (None, Some(_)) => FieldKind::Skip,
+            (None, None) if every_str_a_color.is_some() && is_static_str(&field.ty) => {
+                colors_a_str = true;
+                FieldKind::Color
+            }
+            (None, None) => FieldKind::Typed,
+        });
+    }
+    if let Some(color) = every_str_a_color
+        && !colors_a_str
+    {
+        return Err(syn::Error::new(
+            color,
+            format!("`{ident}` has no `&'static str` field to make a color"),
+        ));
+    }
+    if kinds.iter().all(|kind| matches!(kind, FieldKind::Skip)) {
+        return Err(syn::Error::new_spanned(
+            ident,
+            format!("`{ident}` has no field with a control"),
+        ));
+    }
+    Ok(kinds)
+}
+
+fn story_arg_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
+    let ident = &input.ident;
+    let fields = named_fields(input)?;
+    let kinds = field_kinds(input, fields)?;
+
+    let mut lets = Vec::new();
+    let mut args = Vec::new();
+    let mut values = Vec::new();
+    for (index, (field, kind)) in fields.iter().zip(&kinds).enumerate() {
+        let member = field.ident.as_ref().expect("a named field");
+        // Named by position, not by the field, so a field the crate allows to
+        // be camelCase does not give the derive a local that warns.
+        let start = format_ident!("__start_{}", index);
+        lets.push(quote!(let #start = ::core::clone::Clone::clone(&start.#member);));
+        let (name, label, ty) = (arg_name(member), type_label(&field.ty), &field.ty);
+        let build = match kind {
+            FieldKind::Skip => {
+                values.push(quote!(#member: ::core::clone::Clone::clone(&#start)));
+                continue;
+            }
+            FieldKind::Typed => quote_spanned!(ty.span()=>
+                <#ty as theoria::__private::Field>::field(#name, #label, #start)
+            ),
+            FieldKind::Color => quote_spanned!(ty.span()=>
+                <#ty as theoria::__private::ColorField>::color_field(#name, #label, #start)
+            ),
+        };
+        let (read, arg) = (
+            format_ident!("__read_{}", index),
+            format_ident!("__arg_{}", index),
+        );
+        let described =
+            doc_text(&field.attrs).map(|doc| quote!(let #arg = #arg.with_description(#doc);));
+        lets.push(quote! {
+            let (#read, #arg) = #build;
+            #described
+        });
+        args.push(arg);
+        values.push(quote!(#member: theoria::__private::read(#read)));
+    }
+
+    Ok(quote! {
+        #[automatically_derived]
+        impl theoria::__private::Sealed for #ident {}
+
+        #[automatically_derived]
+        impl theoria::StoryArg for #ident {
+            type Value = Self;
+            type Init = Self;
+
+            fn bind(signal: theoria::__private::Signal<Self>) -> Self {
+                theoria::__private::read(signal)
+            }
+        }
+
+        #[automatically_derived]
+        impl theoria::__private::Plain for #ident {
+            fn arg(
+                name: &'static str,
+                ty: &'static str,
+                start: Self,
+            ) -> (theoria::__private::Signal<Self>, theoria::Arg) {
+                #(#lets)*
+                theoria::__private::group(name, ty, ::std::vec![#(#args),*], move || Self {
+                    #(#values),*
+                })
+            }
+        }
+    })
 }
 
 /// The body's source text (braces stripped) as a string literal, for "show
@@ -350,7 +580,7 @@ mod tests {
             fn x() -> impl IntoView { view! {} }
         };
         assert_eq!(
-            some_str(&doc_description(&f)).as_deref(),
+            some_str(&doc_description(&f.attrs)).as_deref(),
             Some("First line.\nSecond line."),
         );
     }
@@ -358,7 +588,7 @@ mod tests {
     #[test]
     fn doc_description_is_none_without_docs() {
         let f: ItemFn = syn::parse_quote! { fn x() -> impl IntoView { view! {} } };
-        assert_eq!(some_str(&doc_description(&f)), None);
+        assert_eq!(some_str(&doc_description(&f.attrs)), None);
     }
 
     #[test]
@@ -449,6 +679,223 @@ mod tests {
     fn a_mut_parameter_is_accepted() {
         let arg = story_arg(&syn::parse_quote!(mut label: String), &HashMap::new());
         assert!(arg.is_ok(), "got: {:?}", arg.err().map(|e| e.to_string()));
+    }
+
+    /// The derive's error for `item`, which must be refused.
+    fn refused(item: TokenStream2) -> String {
+        match story_arg_impl(&syn::parse2(item).expect("a parsable item")) {
+            Ok(out) => panic!("accepted; got:\n{out}"),
+            Err(e) => e.to_string(),
+        }
+    }
+
+    fn kinds(item: TokenStream2) -> Vec<FieldKind> {
+        let input: DeriveInput = syn::parse2(item).expect("a parsable item");
+        let fields = named_fields(&input).unwrap_or_else(|e| panic!("refused: {e}"));
+        field_kinds(&input, fields).unwrap_or_else(|e| panic!("refused: {e}"))
+    }
+
+    #[test]
+    fn the_derive_refuses_an_enum() {
+        let err = refused(quote!(
+            enum Theme {
+                Day,
+            }
+        ));
+        assert!(err.contains("named fields"), "got: {err}");
+    }
+
+    #[test]
+    fn the_derive_refuses_a_tuple_struct() {
+        let err = refused(quote!(
+            struct Theme(&'static str);
+        ));
+        assert!(err.contains("named fields"), "got: {err}");
+    }
+
+    #[test]
+    fn the_derive_refuses_a_generic_struct() {
+        let err = refused(quote!(
+            struct Theme<T> {
+                ink: T,
+            }
+        ));
+        assert!(err.contains("no generic parameters"), "got: {err}");
+    }
+
+    #[test]
+    fn the_derive_refuses_a_where_clause() {
+        let err = refused(quote!(
+            struct Theme
+            where
+                u8: Copy,
+            {
+                ink: &'static str,
+            }
+        ));
+        assert!(err.contains("no where clause"), "got: {err}");
+    }
+
+    #[test]
+    fn an_unknown_field_option_is_refused_by_name() {
+        let err = refused(quote!(
+            struct Theme {
+                #[story_arg(colour)]
+                ink: &'static str,
+            }
+        ));
+        assert!(err.contains("`colour`"), "got: {err}");
+    }
+
+    #[test]
+    fn skip_on_the_struct_is_refused() {
+        let err = refused(quote!(
+            #[story_arg(skip)]
+            struct Theme {
+                ink: &'static str,
+            }
+        ));
+        assert!(err.contains("`skip`"), "got: {err}");
+    }
+
+    #[test]
+    fn an_option_given_twice_is_refused() {
+        let err = refused(quote!(
+            struct Theme {
+                #[story_arg(skip, skip)]
+                ink: &'static str,
+                font: &'static str,
+            }
+        ));
+        assert!(err.contains("twice"), "got: {err}");
+    }
+
+    #[test]
+    fn a_skipped_color_is_refused_by_the_fields_name() {
+        let err = refused(quote!(
+            struct Theme {
+                #[story_arg(color, skip)]
+                ink: &'static str,
+                font: &'static str,
+            }
+        ));
+        assert!(err.contains("`ink` is skipped"), "got: {err}");
+    }
+
+    #[test]
+    fn a_color_field_in_a_color_struct_is_refused_by_the_fields_name() {
+        let err = refused(quote!(
+            #[story_arg(color)]
+            struct Theme {
+                #[story_arg(color)]
+                ink: &'static str,
+            }
+        ));
+        assert!(err.contains("`ink` is already a color"), "got: {err}");
+    }
+
+    #[test]
+    fn a_color_struct_with_no_str_field_is_refused() {
+        let err = refused(quote!(
+            #[story_arg(color)]
+            struct Theme {
+                ink: String,
+            }
+        ));
+        assert!(err.contains("no `&'static str` field"), "got: {err}");
+    }
+
+    #[test]
+    fn a_color_struct_whose_str_fields_are_all_skipped_is_refused() {
+        let err = refused(quote!(
+            #[story_arg(color)]
+            struct Theme {
+                #[story_arg(skip)]
+                ink: &'static str,
+                size: f64,
+            }
+        ));
+        assert!(err.contains("no `&'static str` field"), "got: {err}");
+    }
+
+    #[test]
+    fn color_on_a_string_field_in_a_color_struct_is_left_to_the_type_check() {
+        let kinds = kinds(quote!(
+            #[story_arg(color)]
+            struct Theme {
+                ink: &'static str,
+                #[story_arg(color)]
+                label: String,
+            }
+        ));
+        assert_eq!(kinds, [FieldKind::Color, FieldKind::Color]);
+    }
+
+    #[test]
+    fn a_color_struct_draws_only_its_str_fields_as_colors() {
+        let kinds = kinds(quote!(
+            #[story_arg(color)]
+            struct Theme {
+                ink: &'static str,
+                label: String,
+                #[story_arg(skip)]
+                version: u32,
+            }
+        ));
+        assert_eq!(kinds, [FieldKind::Color, FieldKind::Typed, FieldKind::Skip]);
+    }
+
+    #[test]
+    fn without_options_every_field_is_drawn_by_its_type() {
+        let kinds = kinds(quote!(
+            struct Theme {
+                ink: &'static str,
+                label: String,
+            }
+        ));
+        assert_eq!(kinds, [FieldKind::Typed, FieldKind::Typed]);
+    }
+
+    #[test]
+    fn a_struct_with_every_field_skipped_is_refused() {
+        let err = refused(quote!(
+            struct Theme {
+                #[story_arg(skip)]
+                version: u32,
+            }
+        ));
+        assert!(err.contains("no field with a control"), "got: {err}");
+    }
+
+    #[test]
+    fn a_static_str_is_told_from_other_references() {
+        let cases: [(Type, bool); 6] = [
+            (syn::parse_quote!(&'static str), true),
+            (syn::parse_quote!(&'static mut str), false),
+            (syn::parse_quote!(&'a str), false),
+            (syn::parse_quote!(&'static String), false),
+            (syn::parse_quote!(String), false),
+            (syn::parse_quote!((&'static str)), true),
+        ];
+        for (ty, expected) in cases {
+            assert_eq!(is_static_str(&ty), expected, "{}", type_label(&ty));
+        }
+    }
+
+    // How a `$t:ty` from `macro_rules!` arrives.
+    #[test]
+    fn a_static_str_in_an_undelimited_group_is_a_static_str() {
+        let ty = Type::Group(syn::TypeGroup {
+            attrs: Vec::new(),
+            group_token: syn::token::Group::default(),
+            elem: Box::new(syn::parse_quote!(&'static str)),
+        });
+        assert!(is_static_str(&ty));
+    }
+
+    #[test]
+    fn a_blank_doc_comment_is_no_description() {
+        assert_eq!(doc_text(&[syn::parse_quote!(#[doc = "  "])]), None);
     }
 
     #[test]

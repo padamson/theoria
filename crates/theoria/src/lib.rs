@@ -26,6 +26,9 @@ mod components;
 #[cfg(feature = "stories")]
 pub use components::stories;
 pub use components::{Gallery, StoryNav};
+/// `#[derive(StoryArg)]`, which makes a struct a `#[story]` arg (see
+/// [`StoryArg`](trait@StoryArg)).
+pub use theoria_macros::StoryArg;
 /// The `#[story]` attribute macro (see `theoria-macros`).
 pub use theoria_macros::story;
 
@@ -40,6 +43,28 @@ pub enum ArgControl {
     Bounded(RwSignal<Bounded>),
     Color(RwSignal<Color>),
     Choice(ChoiceControl),
+    Group(GroupControl),
+}
+
+/// The args of a group, such as one per field of a struct that derives
+/// [`StoryArg`](trait@StoryArg).
+#[derive(Clone, Copy)]
+pub struct GroupControl {
+    args: StoredValue<Vec<Arg>>,
+}
+
+impl GroupControl {
+    /// The group's args, in order.
+    #[must_use]
+    pub fn args(&self) -> Vec<Arg> {
+        self.args.get_value()
+    }
+
+    /// The arg called `name`, if the group has one.
+    #[must_use]
+    pub fn arg(&self, name: &str) -> Option<Arg> {
+        self.args.with_value(|args| find_arg(args, name))
+    }
 }
 
 /// A choice control's options and selection, whatever the [`Choice`]'s `T`.
@@ -336,6 +361,29 @@ fn round_to(value: f64, places: usize) -> f64 {
     }
 }
 
+/// `description`, for the `kind` called `name`, which must have none yet.
+fn described(
+    kind: &str,
+    name: &str,
+    current: Option<&'static str>,
+    description: &'static str,
+) -> &'static str {
+    assert!(
+        current.is_none(),
+        "{kind} {name:?} already has a description"
+    );
+    assert!(
+        !description.trim().is_empty(),
+        "{kind} {name:?} has a blank description"
+    );
+    description
+}
+
+/// The arg called `name` among `args`.
+fn find_arg(args: &[Arg], name: &str) -> Option<Arg> {
+    args.iter().find(|arg| arg.name == name).copied()
+}
+
 /// One editable arg of a story: its name, its type as the story wrote it,
 /// and its control.
 #[derive(Clone, Copy)]
@@ -344,7 +392,9 @@ pub struct Arg {
     ty: &'static str,
     control: ArgControl,
     reset: Callback<()>,
-    resets: Trigger,
+    /// `None` for a group, whose args each have their own.
+    resets: Option<Trigger>,
+    description: Option<&'static str>,
 }
 
 impl Arg {
@@ -362,7 +412,7 @@ impl Arg {
     /// # });
     /// ```
     #[must_use]
-    pub fn new<V: sealed::Plain>(
+    pub fn new<V: __private::Leaf>(
         name: &'static str,
         ty: &'static str,
         signal: RwSignal<V>,
@@ -384,8 +434,65 @@ impl Arg {
             ty,
             control: V::control(signal),
             reset,
-            resets,
+            resets: Some(resets),
+            description: None,
         }
+    }
+
+    /// An arg over `args`, drawn as their controls under its name, whose
+    /// reset puts each of them back.
+    ///
+    /// ```
+    /// use leptos::prelude::*;
+    /// use theoria::{Arg, ArgControl};
+    ///
+    /// # Owner::new().with(|| {
+    /// let size = Arg::group("size", "Size", vec![
+    ///     Arg::new("width", "f64", RwSignal::new(12.0)),
+    ///     Arg::new("depth", "f64", RwSignal::new(30.0)),
+    /// ]);
+    /// let ArgControl::Group(fields) = size.control() else { unreachable!() };
+    /// let names: Vec<_> = fields.args().iter().map(Arg::name).collect();
+    /// assert_eq!(names, ["width", "depth"]);
+    /// # });
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// If `args` is empty, or two of them share a name.
+    #[must_use]
+    pub fn group(name: &'static str, ty: &'static str, args: Vec<Arg>) -> Self {
+        assert!(!args.is_empty(), "arg group {name:?} has no args");
+        for (i, arg) in args.iter().enumerate() {
+            assert!(
+                args[..i].iter().all(|earlier| earlier.name != arg.name),
+                "arg group {name:?} has two args named {:?}",
+                arg.name
+            );
+        }
+        let args = StoredValue::new(args);
+        let reset = Callback::new(move |()| {
+            args.with_value(|args| args.iter().for_each(Arg::reset));
+        });
+        Self {
+            name,
+            ty,
+            control: ArgControl::Group(GroupControl { args }),
+            reset,
+            resets: None,
+            description: None,
+        }
+    }
+
+    /// Give the arg a Markdown description, shown with its control.
+    ///
+    /// # Panics
+    ///
+    /// If the arg already has a description, or if `description` is blank.
+    #[must_use]
+    pub fn with_description(mut self, description: &'static str) -> Self {
+        self.description = Some(described("arg", self.name, self.description, description));
+        self
     }
 
     #[must_use]
@@ -404,6 +511,13 @@ impl Arg {
         self.control
     }
 
+    /// The Markdown description, if any: a field's doc comment, for an arg
+    /// that `#[derive(StoryArg)]` made.
+    #[must_use]
+    pub fn description(&self) -> Option<&'static str> {
+        self.description
+    }
+
     /// Put the arg back to its default.
     pub fn reset(&self) {
         self.reset.run(());
@@ -412,35 +526,138 @@ impl Arg {
     /// Track the arg's resets, edited or not, for a control that is not
     /// bound to the arg's signal.
     pub(crate) fn track_reset(&self) {
-        self.resets.track();
+        if let Some(resets) = self.resets {
+            resets.track();
+        }
+        if let ArgControl::Group(group) = self.control {
+            group
+                .args
+                .with_value(|args| args.iter().for_each(Arg::track_reset));
+        }
     }
 }
 
-mod sealed {
-    use leptos::prelude::RwSignal;
+/// What `#[story]` and `#[derive(StoryArg)]` expand to. Not part of the
+/// stable API.
+#[doc(hidden)]
+pub mod __private {
+    use std::collections::HashSet;
+    use std::sync::{LazyLock, Mutex, PoisonError};
 
-    use super::ArgControl;
+    pub use leptos::prelude::Signal;
+    use leptos::prelude::*;
+
+    use super::{Arg, ArgControl, Color};
 
     pub trait Sealed {}
 
-    /// A story arg that is its own value. The supertraits repeat `Value`'s
-    /// bounds, which rustc does not carry over through `Value = Self`.
+    /// A story arg that is its own value, which is what a `Signal` arg holds.
+    /// The supertraits repeat `Value`'s bounds, which rustc does not carry
+    /// over through `Value = Self`.
     #[diagnostic::on_unimplemented(
         message = "`Signal<{Self}>` cannot be a #[story] arg",
         label = "no control for a signal of this type",
-        note = "a Signal arg holds a bool, f64, String, Bounded, Color, or Choice"
+        note = "a Signal arg holds a bool, f64, String, Bounded, Color, or Choice, or a struct that derives StoryArg"
     )]
     pub trait Plain: super::StoryArg<Value = Self> + Clone + Send + Sync + 'static {
+        /// The arg's value, read from its controls, and the arg.
+        fn arg(name: &'static str, ty: &'static str, start: Self) -> (Signal<Self>, Arg);
+    }
+
+    /// A value one control edits.
+    pub trait Leaf: Clone + Send + Sync + 'static {
         fn control(signal: RwSignal<Self>) -> ArgControl;
 
         /// Whether the control would show `self` and `other` the same.
         fn same(&self, other: &Self) -> bool;
     }
+
+    /// The arg over one signal and its control.
+    pub fn leaf<T: Leaf>(name: &'static str, ty: &'static str, start: T) -> (Signal<T>, Arg) {
+        let signal = RwSignal::new(start);
+        (signal.into(), Arg::new(name, ty, signal))
+    }
+
+    /// A type a field of a struct that derives `StoryArg` can have.
+    #[diagnostic::on_unimplemented(
+        message = "a field of type `{Self}` has no control",
+        label = "no control for this field's type",
+        note = "a StoryArg field is a bool, f64, String, &'static str, Bounded, Color, or Choice; `#[story_arg(skip)]` keeps its value"
+    )]
+    pub trait Field: Sized + Send + Sync + 'static {
+        fn field(name: &'static str, ty: &'static str, start: Self) -> (Signal<Self>, Arg);
+    }
+
+    impl<T: Leaf> Field for T {
+        fn field(name: &'static str, ty: &'static str, start: Self) -> (Signal<Self>, Arg) {
+            leaf(name, ty, start)
+        }
+    }
+
+    impl Field for &'static str {
+        fn field(name: &'static str, ty: &'static str, start: Self) -> (Signal<Self>, Arg) {
+            let text = RwSignal::new(start.to_string());
+            (interned(text, String::as_str), Arg::new(name, ty, text))
+        }
+    }
+
+    /// A field `#[story_arg(color)]` draws as a color.
+    #[diagnostic::on_unimplemented(
+        message = "`#[story_arg(color)]` is for a `&'static str` field, not `{Self}`",
+        label = "not a `&'static str`",
+        note = "a `Color` field is drawn as a color without the option"
+    )]
+    pub trait ColorField: Sized + Send + Sync + 'static {
+        fn color_field(name: &'static str, ty: &'static str, start: Self) -> (Signal<Self>, Arg);
+    }
+
+    impl ColorField for &'static str {
+        fn color_field(name: &'static str, ty: &'static str, start: Self) -> (Signal<Self>, Arg) {
+            let color = RwSignal::new(Color::from(start));
+            (interned(color, Color::as_str), Arg::new(name, ty, color))
+        }
+    }
+
+    /// The text `signal` holds, interned once per edit.
+    fn interned<L: Send + Sync + 'static>(
+        signal: RwSignal<L>,
+        text: fn(&L) -> &str,
+    ) -> Signal<&'static str> {
+        Memo::new(move |_| signal.with(|value| intern(text(value)))).into()
+    }
+
+    /// The struct's value, read from its fields' signals, and the group of
+    /// their args.
+    pub fn group<T: Send + Sync + 'static>(
+        name: &'static str,
+        ty: &'static str,
+        args: Vec<Arg>,
+        value: impl Fn() -> T + Send + Sync + 'static,
+    ) -> (Signal<T>, Arg) {
+        (Signal::derive(value), Arg::group(name, ty, args))
+    }
+
+    pub fn read<T: Clone + Send + Sync + 'static>(signal: Signal<T>) -> T {
+        signal.get()
+    }
+
+    /// `text`, kept for good the first time it is seen, so a field edited
+    /// back and forth leaks each text once.
+    pub fn intern(text: &str) -> &'static str {
+        static TEXTS: LazyLock<Mutex<HashSet<&'static str>>> = LazyLock::new(Mutex::default);
+        let mut texts = TEXTS.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(kept) = texts.get(text) {
+            return kept;
+        }
+        let kept: &'static str = Box::leak(text.into());
+        texts.insert(kept);
+        kept
+    }
 }
 
 /// A type a `#[story]` parameter can have: `bool`, `f64`, `String`,
-/// [`Bounded`], [`Color`], [`Choice`], or a `Signal` of one, which hands the body the
-/// arg's signal, not its value.
+/// [`Bounded`], [`Color`], [`Choice`], a struct that derives `StoryArg`, or
+/// a `Signal` of one, which hands the body the arg's signal, not its value.
 ///
 /// ```
 /// use leptos::prelude::*;
@@ -464,13 +681,69 @@ mod sealed {
 /// }
 /// ```
 ///
-/// The trait is sealed, and its method is the `#[story]` macro's to call.
+/// A struct that derives `StoryArg` (and `Clone`) is one arg with a control
+/// per field, picked by the field's type as a parameter's is, with
+/// `&'static str` a text box. Each field's doc comment is shown with its
+/// control. `#[story_arg(color)]` makes a `&'static str` field a color, and
+/// on the struct makes every field written `&'static str` one. An edited
+/// `&'static str` is leaked once per distinct text.
+///
+/// ```
+/// use leptos::prelude::*;
+/// use theoria::{StoryArg, story};
+///
+/// #[derive(Clone, StoryArg)]
+/// struct Theme {
+///     /// The page's background.
+///     #[story_arg(color)]
+///     paper: &'static str,
+///     font: &'static str,
+///     #[story_arg(skip)]
+///     version: u32,
+/// }
+///
+/// const THEME: Theme = Theme { paper: "#f6f1e7", font: "Georgia, serif", version: 2 };
+///
+/// #[story(theme = THEME)]
+/// fn page(theme: Signal<Theme>) -> impl IntoView {
+///     view! { <main style:background=move || theme.get().paper>"Hello"</main> }
+/// }
+/// ```
+///
+/// `#[story_arg(skip)]` keeps a field at its default with no control; a
+/// field of any other type without it is a compile error at the field:
+///
+/// ```compile_fail,E0277
+/// use theoria::StoryArg;
+///
+/// #[derive(Clone, StoryArg)]
+/// struct Theme {
+///     paper: &'static str,
+///     version: u32,
+/// }
+/// ```
+///
+/// and so is `#[story_arg(color)]` on a field that is not a `&'static str`:
+///
+/// ```compile_fail,E0277
+/// use theoria::StoryArg;
+///
+/// #[derive(Clone, StoryArg)]
+/// struct Theme {
+///     #[story_arg(color)]
+///     paper: String,
+/// }
+/// ```
+///
+/// Implement it outside theoria with the derive. The traits the derive
+/// implements are hidden and not stable API, and the trait's method is the
+/// `#[story]` macro's to call.
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot be a #[story] arg",
     label = "no control for this type",
-    note = "a #[story] arg is a bool, f64, String, Bounded, Color, or Choice, or a `Signal` of one (not an `RwSignal`)"
+    note = "a #[story] arg is a bool, f64, String, Bounded, Color, or Choice, a struct that derives StoryArg, or a `Signal` of one (not an `RwSignal`)"
 )]
-pub trait StoryArg: Sized + sealed::Sealed {
+pub trait StoryArg: Sized + __private::Sealed {
     /// What the arg's control edits.
     type Value: Clone + Send + Sync + 'static;
 
@@ -483,9 +756,9 @@ pub trait StoryArg: Sized + sealed::Sealed {
 
 macro_rules! value_arg {
     ($ty:ty, init: $init:ty, control: $variant:ident) => {
-        impl sealed::Sealed for $ty {}
+        impl __private::Sealed for $ty {}
 
-        impl sealed::Plain for $ty {
+        impl __private::Leaf for $ty {
             fn control(signal: RwSignal<$ty>) -> ArgControl {
                 ArgControl::$variant(signal)
             }
@@ -496,6 +769,12 @@ macro_rules! value_arg {
             )]
             fn same(&self, other: &Self) -> bool {
                 self == other
+            }
+        }
+
+        impl __private::Plain for $ty {
+            fn arg(name: &'static str, ty: &'static str, start: Self) -> (Signal<Self>, Arg) {
+                __private::leaf(name, ty, start)
             }
         }
 
@@ -516,8 +795,8 @@ value_arg!(String, init: &'static str, control: Text);
 value_arg!(Bounded, init: Bounded, control: Bounded);
 value_arg!(Color, init: &'static str, control: Color);
 
-impl<T> sealed::Sealed for Choice<T> {}
-impl<T: Clone + Send + Sync + 'static> sealed::Plain for Choice<T> {
+impl<T> __private::Sealed for Choice<T> {}
+impl<T: Clone + Send + Sync + 'static> __private::Leaf for Choice<T> {
     fn control(signal: RwSignal<Self>) -> ArgControl {
         let labels = signal.with_untracked(|choice| {
             choice
@@ -541,6 +820,12 @@ impl<T: Clone + Send + Sync + 'static> sealed::Plain for Choice<T> {
     }
 }
 
+impl<T: Clone + Send + Sync + 'static> __private::Plain for Choice<T> {
+    fn arg(name: &'static str, ty: &'static str, start: Self) -> (Signal<Self>, Arg) {
+        __private::leaf(name, ty, start)
+    }
+}
+
 impl<T: Clone + Send + Sync + 'static> StoryArg for Choice<T> {
     type Value = Self;
     type Init = Self;
@@ -550,9 +835,9 @@ impl<T: Clone + Send + Sync + 'static> StoryArg for Choice<T> {
     }
 }
 
-impl<T: sealed::Plain> sealed::Sealed for Signal<T> {}
+impl<T: __private::Plain> __private::Sealed for Signal<T> {}
 
-impl<T: sealed::Plain> StoryArg for Signal<T> {
+impl<T: __private::Plain> StoryArg for Signal<T> {
     type Value = T;
     type Init = T::Init;
 
@@ -642,17 +927,7 @@ impl Story {
     /// comment is one), or if `description` is blank.
     #[must_use]
     pub fn with_description(mut self, description: &'static str) -> Self {
-        assert!(
-            self.description.is_none(),
-            "story {:?} already has a description",
-            self.name
-        );
-        assert!(
-            !description.trim().is_empty(),
-            "story {:?} has a blank description",
-            self.name
-        );
-        self.description = Some(description);
+        self.description = Some(described("story", self.name, self.description, description));
         self
     }
 
@@ -700,7 +975,7 @@ impl Story {
     /// The arg called `name`, if the story has one.
     #[must_use]
     pub fn arg(&self, name: &str) -> Option<Arg> {
-        self.args.iter().find(|arg| arg.name == name).copied()
+        find_arg(&self.args, name)
     }
 
     /// The captured body source, if any (for "show code").
@@ -1222,19 +1497,89 @@ mod arg_tests {
         });
     }
 
+    /// How many times a panel that tracks `tracked`'s resets draws, once
+    /// before `act` and once after.
+    fn draws(tracked: Arg, act: impl FnOnce()) -> usize {
+        let runs = StoredValue::new(0);
+        let panel = Memo::new(move |_| {
+            tracked.track_reset();
+            runs.update_value(|n| *n += 1);
+        });
+        panel.get();
+        act();
+        panel.get();
+        runs.get_value()
+    }
+
+    fn width() -> Arg {
+        Arg::new("width", "f64", RwSignal::new(12.0))
+    }
+
     #[test]
     fn a_reset_redraws_what_tracks_the_arg() {
         Owner::new().with(|| {
-            let arg = Arg::new("width", "f64", RwSignal::new(12.0));
-            let runs = StoredValue::new(0);
-            let panel = Memo::new(move |_| {
-                arg.track_reset();
-                runs.update_value(|n| *n += 1);
-            });
-            panel.get();
-            arg.reset();
-            panel.get();
-            assert_eq!(runs.get_value(), 2);
+            let arg = width();
+            assert_eq!(draws(arg, || arg.reset()), 2);
+        });
+    }
+
+    #[test]
+    fn a_group_reset_redraws_what_tracks_the_group() {
+        Owner::new().with(|| {
+            let group = Arg::group("size", "Size", vec![width()]);
+            assert_eq!(draws(group, || group.reset()), 2);
+        });
+    }
+
+    #[test]
+    fn a_reset_of_one_arg_in_a_group_redraws_what_tracks_the_group() {
+        Owner::new().with(|| {
+            let width = width();
+            let group = Arg::group("size", "Size", vec![width]);
+            assert_eq!(draws(group, || width.reset()), 2);
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = r#"arg group "size" has no args"#)]
+    fn a_group_with_no_args_panics() {
+        Owner::new().with(|| {
+            let _ = Arg::group("size", "Size", Vec::new());
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = r#"arg group "size" has two args named "width""#)]
+    fn a_group_with_two_args_of_one_name_panics() {
+        Owner::new().with(|| {
+            let _ = Arg::group("size", "Size", vec![width(), width()]);
+        });
+    }
+
+    #[test]
+    fn group_arg_is_none_for_a_name_the_group_lacks() {
+        Owner::new().with(|| {
+            let ArgControl::Group(fields) = Arg::group("size", "Size", vec![width()]).control()
+            else {
+                panic!("a group did not get the group control");
+            };
+            assert_eq!(fields.arg("depth").map(|arg| arg.name()), None);
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = r#"arg "width" already has a description"#)]
+    fn a_second_arg_description_panics() {
+        Owner::new().with(|| {
+            let _ = width().with_description("first").with_description("second");
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = r#"arg "width" has a blank description"#)]
+    fn a_blank_arg_description_panics() {
+        Owner::new().with(|| {
+            let _ = width().with_description("  ");
         });
     }
 
@@ -1431,5 +1776,375 @@ mod choice_tests {
     #[should_panic(expected = "a Choice needs at least one option")]
     fn a_choice_with_no_options_panics() {
         let _ = Choice::new(Vec::<&str>::new());
+    }
+}
+
+#[cfg(test)]
+mod derive_tests {
+    use super::*;
+
+    /// Every kind of field the derive draws.
+    #[derive(Clone, StoryArg)]
+    struct Fields {
+        /// Whether the card is raised.
+        raised: bool,
+        width: f64,
+        label: String,
+        heading: &'static str,
+        #[story_arg(color)]
+        ink: &'static str,
+        paper: Color,
+        radius: Bounded,
+        font: Choice<&'static str>,
+        #[story_arg(skip)]
+        version: u32,
+    }
+
+    fn fields() -> Fields {
+        Fields {
+            raised: true,
+            width: 12.0,
+            label: "Patio".to_string(),
+            heading: "Yard",
+            ink: "#243832",
+            paper: Color::from("#f6f1e7"),
+            radius: Bounded::new(0.5).min(0.0).max(1.0),
+            font: Choice::labelled([("Serif", "Georgia, serif"), ("Sans", "system-ui")]),
+            version: 7,
+        }
+    }
+
+    #[story(card = fields())]
+    fn card(card: Signal<Fields>) -> impl IntoView {
+        view! {
+            <p
+                class:raised=move || card.get().raised
+                style:color=move || card.get().ink
+                data-version=move || card.get().version
+            >
+                {move || card.get().heading}
+            </p>
+        }
+    }
+
+    #[story(card = fields())]
+    fn card_as_value(card: Fields) -> impl IntoView {
+        view! { <p>{card.heading}</p> }
+    }
+
+    fn group_of(story: &Story, arg: &str) -> GroupControl {
+        let ArgControl::Group(group) = story.arg(arg).expect("the arg").control() else {
+            panic!("`{arg}` did not get a group of controls");
+        };
+        group
+    }
+
+    /// The `card` arg's field called `name`.
+    fn field(story: &Story, name: &str) -> Arg {
+        let group = group_of(story, "card");
+        group.arg(name).unwrap_or_else(|| {
+            let names: Vec<_> = group.args().iter().map(Arg::name).collect();
+            panic!("no field `{name}`; fields: {names:?}")
+        })
+    }
+
+    fn color(story: &Story, name: &str) -> RwSignal<Color> {
+        let ArgControl::Color(color) = field(story, name).control() else {
+            panic!("`{name}` did not get the color control");
+        };
+        color
+    }
+
+    fn text(story: &Story, name: &str) -> RwSignal<String> {
+        let ArgControl::Text(text) = field(story, name).control() else {
+            panic!("`{name}` did not get the text control");
+        };
+        text
+    }
+
+    #[test]
+    fn a_struct_arg_has_a_control_per_field_but_a_skipped_one() {
+        Owner::new().with(|| {
+            let names: Vec<_> = group_of(&card(), "card")
+                .args()
+                .iter()
+                .map(Arg::name)
+                .collect();
+            assert_eq!(
+                names,
+                [
+                    "raised", "width", "label", "heading", "ink", "paper", "radius", "font"
+                ]
+            );
+        });
+    }
+
+    #[test]
+    fn each_field_gets_the_control_its_type_picks() {
+        Owner::new().with(|| {
+            let story = card();
+            let control = |name| field(&story, name).control();
+            assert!(matches!(control("raised"), ArgControl::Bool(_)), "bool");
+            assert!(matches!(control("width"), ArgControl::Num(_)), "f64");
+            assert!(matches!(control("label"), ArgControl::Text(_)), "String");
+            assert!(matches!(control("heading"), ArgControl::Text(_)), "&str");
+            assert!(matches!(control("paper"), ArgControl::Color(_)), "Color");
+            assert!(
+                matches!(control("radius"), ArgControl::Bounded(_)),
+                "Bounded"
+            );
+            assert!(matches!(control("font"), ArgControl::Choice(_)), "Choice");
+        });
+    }
+
+    #[test]
+    fn a_str_field_marked_color_gets_the_color_control() {
+        Owner::new().with(|| {
+            let ink = color(&card(), "ink");
+            assert_eq!(ink.get_untracked().as_str(), "#243832");
+        });
+    }
+
+    #[derive(Clone, StoryArg)]
+    #[story_arg(color)]
+    struct Palette {
+        ink: &'static str,
+        paper: &'static str,
+        label: String,
+    }
+
+    #[story(palette = Palette { ink: "#243832", paper: "#f6f1e7", label: "Day".to_string() })]
+    fn palette(palette: Palette) -> impl IntoView {
+        view! { <p style:color=palette.ink>{palette.label}</p> }
+    }
+
+    #[test]
+    fn color_on_the_struct_makes_every_str_field_a_color() {
+        Owner::new().with(|| {
+            let colors: Vec<_> = group_of(&palette(), "palette")
+                .args()
+                .iter()
+                .filter(|arg| matches!(arg.control(), ArgControl::Color(_)))
+                .map(Arg::name)
+                .collect();
+            assert_eq!(colors, ["ink", "paper"]);
+        });
+    }
+
+    #[test]
+    fn a_struct_arg_starts_at_the_default_in_its_attribute() {
+        let html = leptotes::render(|| card().view());
+        assert!(html.contains(">Yard<"), "got: {html}");
+    }
+
+    #[test]
+    fn an_edit_to_a_field_reaches_a_story_that_takes_the_signal() {
+        let html = leptotes::render(|| {
+            let story = card();
+            text(&story, "heading").set("Porch".to_string());
+            story.view()
+        });
+        assert!(html.contains(">Porch<"), "got: {html}");
+    }
+
+    #[test]
+    fn an_edit_to_a_color_field_reaches_the_story() {
+        let html = leptotes::render(|| {
+            let story = card();
+            let ink = color(&story, "ink");
+            ink.set(Color::from("rebeccapurple"));
+            story.view()
+        });
+        assert!(html.contains("color:rebeccapurple"), "got: {html}");
+    }
+
+    #[test]
+    fn an_edit_to_a_field_reaches_a_story_that_takes_the_value() {
+        let html = leptotes::render(|| {
+            let story = card_as_value();
+            text(&story, "heading").set("Porch".to_string());
+            story.view()
+        });
+        assert!(html.contains(">Porch<"), "got: {html}");
+    }
+
+    #[test]
+    fn a_skipped_field_keeps_its_default() {
+        let html = leptotes::render(|| card().view());
+        assert!(html.contains(r#"data-version="7""#), "got: {html}");
+    }
+
+    /// A struct that implements `Drop` refuses a move out of its fields.
+    #[derive(Clone, StoryArg)]
+    struct Dropped {
+        label: String,
+    }
+
+    impl Drop for Dropped {
+        fn drop(&mut self) {}
+    }
+
+    #[story(dropped = Dropped { label: "Patio".to_string() })]
+    fn dropped(dropped: Dropped) -> impl IntoView {
+        view! { <p>{dropped.label.clone()}</p> }
+    }
+
+    #[test]
+    fn a_struct_that_implements_drop_starts_at_its_default() {
+        let html = leptotes::render(|| dropped().view());
+        assert!(html.contains("Patio"), "got: {html}");
+    }
+
+    // Denied here so that a local the derive names after a field fails the
+    // build rather than warning in a consumer's.
+    #[deny(non_snake_case)]
+    mod camel_case {
+        use super::*;
+
+        #[derive(Clone, StoryArg)]
+        pub(super) struct Camel {
+            #[allow(non_snake_case)]
+            pub(super) inkColor: &'static str,
+        }
+
+        #[story(camel = Camel { inkColor: "Yard" })]
+        pub(super) fn camel(camel: Signal<Camel>) -> impl IntoView {
+            move || camel.get().inkColor
+        }
+    }
+
+    #[test]
+    fn a_camel_case_field_is_named_as_written() {
+        Owner::new().with(|| {
+            let names: Vec<_> = group_of(&camel_case::camel(), "camel")
+                .args()
+                .iter()
+                .map(Arg::name)
+                .collect();
+            assert_eq!(names, ["inkColor"]);
+        });
+    }
+
+    use std::sync::Mutex;
+
+    // Each static belongs to one test, so its contents hold when `cargo test`
+    // runs the tests on parallel threads in one process.
+    static HEADINGS: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+    static INKS: Mutex<Vec<&'static str>> = Mutex::new(Vec::new());
+
+    #[story(card = fields())]
+    fn card_heading_kept(card: Signal<Fields>) -> impl IntoView {
+        move || HEADINGS.lock().unwrap().push(card.get().heading)
+    }
+
+    #[story(card = fields())]
+    fn card_ink_kept(card: Signal<Fields>) -> impl IntoView {
+        move || INKS.lock().unwrap().push(card.get().ink)
+    }
+
+    /// Draw `story` on a live stage, and run each edit in turn.
+    fn edit_on_a_live_stage(story: Story, edits: &[&dyn Fn()]) {
+        let stage = Memo::new(move |_| drop(story.view().to_html()));
+        for edit in edits {
+            edit();
+            stage.get();
+        }
+    }
+
+    /// Every `text` in `kept` is the one `&'static str`.
+    fn assert_kept_once(kept: &[&'static str], text: &str) {
+        let copies: Vec<_> = kept.iter().filter(|kept| **kept == text).collect();
+        assert!(copies.len() >= 2, "{text:?} read once; kept: {kept:?}");
+        let pointers: Vec<_> = copies.iter().map(|copy| copy.as_ptr()).collect();
+        assert!(
+            pointers.iter().all(|p| *p == pointers[0]),
+            "{text:?} kept at {pointers:?}"
+        );
+    }
+
+    #[test]
+    fn a_str_field_edited_back_to_a_text_gets_the_same_str() {
+        Owner::new().with(|| {
+            let story = card_heading_kept();
+            let heading = text(&story, "heading");
+            let edits = ["Porch", "Deck", "Porch"].map(|t| move || heading.set(t.to_string()));
+            edit_on_a_live_stage(story, &[&edits[0], &edits[1], &edits[2]]);
+        });
+        assert_kept_once(&HEADINGS.lock().unwrap(), "Porch");
+    }
+
+    #[test]
+    fn a_color_field_edited_back_to_a_color_gets_the_same_str() {
+        Owner::new().with(|| {
+            let story = card_ink_kept();
+            let ink = color(&story, "ink");
+            let edits = ["red", "blue", "red"].map(|c| move || ink.set(Color::from(c)));
+            edit_on_a_live_stage(story, &[&edits[0], &edits[1], &edits[2]]);
+        });
+        assert_kept_once(&INKS.lock().unwrap(), "red");
+    }
+
+    #[test]
+    fn a_fields_doc_comment_is_its_description() {
+        Owner::new().with(|| {
+            assert_eq!(
+                field(&card(), "raised").description(),
+                Some("Whether the card is raised.")
+            );
+        });
+    }
+
+    #[test]
+    fn a_field_with_no_doc_comment_has_no_description() {
+        Owner::new().with(|| {
+            assert_eq!(field(&card(), "width").description(), None);
+        });
+    }
+
+    #[test]
+    fn a_reset_puts_every_field_back() {
+        Owner::new().with(|| {
+            let story = card();
+            text(&story, "heading").set("Porch".to_string());
+            text(&story, "label").set("Deck".to_string());
+            story.arg("card").unwrap().reset();
+            assert_eq!(
+                [
+                    text(&story, "heading").get_untracked(),
+                    text(&story, "label").get_untracked()
+                ],
+                ["Yard", "Patio"]
+            );
+        });
+    }
+
+    #[test]
+    fn a_struct_arg_keeps_its_type_as_the_story_wrote_it() {
+        Owner::new().with(|| {
+            assert_eq!(card().arg("card").unwrap().ty(), "Signal<Fields>");
+        });
+    }
+
+    #[test]
+    fn a_fields_type_is_as_the_struct_wrote_it() {
+        Owner::new().with(|| {
+            assert_eq!(field(&card(), "heading").ty(), "&'static str");
+        });
+    }
+}
+
+#[cfg(test)]
+mod intern_tests {
+    use super::__private::intern;
+
+    #[test]
+    fn a_text_is_kept_once() {
+        let (first, second) = (intern("Porch"), intern("Porch"));
+        assert!(std::ptr::eq(first, second), "{first:p} and {second:p}");
+    }
+
+    #[test]
+    fn interned_text_reads_as_the_text_given() {
+        assert_eq!(intern("Deck"), "Deck");
     }
 }

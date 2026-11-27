@@ -330,6 +330,11 @@ const GALLERY_INDEX_HTML: &str = r#"<!DOCTYPE html>
       .theoria-controls .control-input select { background: #fff; }
       .theoria-controls .theoria-reset { display: block; margin: 4px 10px 8px auto; padding: 3px 10px; border: 1px solid #d8d0be; border-radius: 6px; background: #faf7f0; color: #2c2a25; font: inherit; cursor: pointer; }
       .theoria-controls .control-input input[type=range] { flex: 1 1 6em; min-width: 0; padding: 0; border: none; }
+      .theoria-controls .control-description { margin-bottom: 4px; }
+      .theoria-controls .control-description .theoria-md { font-size: 12px; color: #6b6558; }
+      .theoria-controls .control-description .theoria-md > :last-child { margin-bottom: 0; }
+      .theoria-controls .control-fields { margin-top: 2px; padding-left: 8px; border-left: 2px solid #e3dccb; }
+      .theoria-controls .control-fields .control-row { padding: 6px 0 6px 2px; }
       .theoria-bounded { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
       .theoria-bounded input[type=number] { flex: 1 1 4.5em; min-width: 0; }
       .theoria-color { display: flex; gap: 8px; align-items: center; }

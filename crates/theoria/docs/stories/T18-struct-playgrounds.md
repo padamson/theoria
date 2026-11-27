@@ -21,19 +21,19 @@ settle on can be pasted into the site.
 - **T18.1 — reset** ✅
   - [x] the controls panel has a Reset button that puts every arg of the
         selected story back to its default
-- **T18.2 — `#[derive(StoryArg)]` over a struct of leaf fields**
-  - [ ] a struct that derives `StoryArg` is a `#[story]` arg, taken as the
+- **T18.2 — `#[derive(StoryArg)]` over a struct of leaf fields** ✅
+  - [x] a struct that derives `StoryArg` is a `#[story]` arg, taken as the
         struct or as a `Signal` of it, with its default given in the story
         attribute (`theme = DEFAULT`)
-  - [ ] each field gets a control by its type: `bool`, `f64`, `String`,
+  - [x] each field gets a control by its type: `bool`, `f64`, `String`,
         `Bounded`, `Color`, and `Choice<T>` as story params do, and
         `&'static str` a text box
-  - [ ] `#[story_arg(color)]` on a `&'static str` field makes it a color;
+  - [x] `#[story_arg(color)]` on a `&'static str` field makes it a color;
         on the struct, every `&'static str` field
-  - [ ] an edited `&'static str` is stored once per distinct text, not once
+  - [x] an edited `&'static str` is stored once per distinct text, not once
         per edit
-  - [ ] each field's doc comment is shown with its control
-  - [ ] a field whose type has no control is a compile error at the field,
+  - [x] each field's doc comment is shown with its control
+  - [x] a field whose type has no control is a compile error at the field,
         unless it is `#[story_arg(skip)]`, which keeps its default
 - **T18.3 — groups**
   - [ ] a field whose type derives `StoryArg` is a group of controls under
@@ -61,14 +61,13 @@ settle on can be pasted into the site.
   arg, for components that read fields as signals, waits for a consumer.
 - A crate whose theoria dependency is optional writes the derive and its
   attributes inside `cfg_attr(feature = "stories", ...)`.
-- `StoryArg` is sealed, and its supertraits (`sealed::Sealed`, and
-  `sealed::Plain`, which a type's `Signal<T>` form needs and which holds
-  its `control` and `same`, the test a reset uses to skip an unedited arg)
-  are private, so a derive expanding in another crate cannot name them. T18.2 moves both to a
-  `#[doc(hidden)]` public path the derive implements, so only the derive
-  implements `StoryArg` outside theoria. The docs that say the trait is
-  sealed (the CHANGELOG, `skills/theoria-usage/references/usage.md`, and
-  `StoryArg`'s rustdoc) then say that instead.
+- `StoryArg`'s supertrait `Sealed`, and `Plain` (what a `Signal<T>` arg
+  holds) and `Field` (what a field can be), are public under the
+  `#[doc(hidden)]` `theoria::__private`, so the derive can implement them
+  in another crate. They are not stable API, so the derive is the only
+  supported impl of `StoryArg` outside theoria. A
+  struct arg is `Arg::group` over one arg per field, and its value is
+  rebuilt from the fields' signals on each read.
 - Not pulled yet: a length control (a number and a unit, for pyle's
   `radius`) and a choice that also takes free text (for a site's own font
   stack). Both fields are text boxes until a consumer asks.

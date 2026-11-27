@@ -331,3 +331,57 @@ fn a_menu_is_named_for_its_arg() {
     let html = choice_control(Choice::new(["dev", "0.13.0"]));
     assert_eq!(named(&html, "build"), 1, "got:\n{html}");
 }
+
+fn group_control() -> String {
+    leptotes::render(|| {
+        let size = Arg::group(
+            "size",
+            "Size",
+            vec![
+                Arg::new("width", "f64", RwSignal::new(12.0)),
+                Arg::new("raised", "bool", RwSignal::new(true)),
+            ],
+        );
+        view! { <Controls args=vec![size] /> }
+    })
+}
+
+#[test]
+fn a_group_is_labelled_by_its_name() {
+    let html = group_control();
+    assert_eq!(
+        leptotes::count(&html, r#"role="group" aria-label="size""#),
+        1,
+        "got:\n{html}"
+    );
+}
+
+#[test]
+fn a_group_draws_a_control_per_arg_in_it() {
+    let html = group_control();
+    let inputs = [
+        inputs_of_type(&html, "number"),
+        inputs_of_type(&html, "checkbox"),
+    ];
+    assert_eq!(inputs, [1, 1], "got:\n{html}");
+}
+
+#[test]
+fn a_group_shows_its_type() {
+    let html = group_control();
+    assert_eq!(leptotes::count(&html, ">Size<"), 1, "got:\n{html}");
+}
+
+#[test]
+fn an_args_description_is_drawn_as_markdown_with_its_control() {
+    let html = leptotes::render(|| {
+        let width =
+            Arg::new("width", "f64", RwSignal::new(12.0)).with_description("The width, in `ft`.");
+        view! { <Controls args=vec![width] /> }
+    });
+    assert_eq!(
+        leptotes::count(&html, "The width, in <code>ft</code>."),
+        1,
+        "got:\n{html}"
+    );
+}

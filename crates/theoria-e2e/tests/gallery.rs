@@ -1148,6 +1148,65 @@ async fn an_arg_type_too_long_for_one_line_wraps_inside_the_controls() -> Result
 
 #[tokio::test]
 #[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_field_typed_into_under_its_structs_name_reaches_the_story() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · struct").await?;
+        page.locator(r#".theoria-panel [role=group][aria-label="card"]"#)
+            .get_by_label("title", true)
+            .fill("Porch", None)
+            .await
+            .context("type a title into the card's title field")?;
+        expect(page.locator(".theoria-stage .k-title"))
+            .to_have_text("Porch")
+            .await
+            .context("the title reaches the stage")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_fields_description_sits_as_far_from_its_control_as_from_its_name() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · struct").await?;
+        let row = page
+            .locator(
+                r#".theoria-panel [role=group][aria-label="card"] .control-fields .control-row"#,
+            )
+            .first();
+        let head = row
+            .locator(".control-head")
+            .bounding_box()
+            .await?
+            .context("the field's name is laid out")?;
+        let text = row
+            .locator(".control-description p")
+            .bounding_box()
+            .await?
+            .context("the field's description is laid out")?;
+        let control = row
+            .locator(".control-input")
+            .bounding_box()
+            .await?
+            .context("the field's control is laid out")?;
+
+        let above = text.y - (head.y + head.height);
+        let below = control.y - (text.y + text.height);
+        ensure!(
+            (above - below).abs() < 1.0,
+            "{above}px above the description, {below}px below it: \
+             name {head:?}, description {text:?}, control {control:?}"
+        );
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
 async fn a_control_is_found_by_its_args_name() -> Result<()> {
     with_gallery(async |page: &Page| {
         select(page, "Knobs · choice").await?;

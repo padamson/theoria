@@ -1,6 +1,6 @@
 ---
 name: theoria-dev
-description: "How theoria itself is built: the crate split and features, the colocated component, story, and test files and how `components/mod.rs` wires them, how components are tested (leptotes under ssr, `story_impl` for the macro, `render` and `generate` for the CLI, theoria-e2e in a browser), what mutation testing covers and why, how the CLI generates the gallery harness, the demand-driven backlog in `docs/PLAN.md` and `docs/stories/`, and the release order. Use when adding or changing a theoria component, the `#[story]` macro, or `theoria-cli`; when adding a story or slice to the backlog; when a theoria test, mutant, or e2e run fails; and before a release. Not for writing stories in a crate that uses theoria, which is the shipped `theoria-usage` skill."
+description: "How theoria itself is built: the crate split and features, the colocated component, story, and test files and how `components/mod.rs` wires them, how components are tested (leptotes under ssr, `story_impl` and `story_arg_impl` for the macros, `render` and `generate` for the CLI, theoria-e2e in a browser), what mutation testing covers and why, how the CLI generates the gallery harness, the demand-driven backlog in `docs/PLAN.md` and `docs/stories/`, and the release order. Use when adding or changing a theoria component, a control, the `#[story]` macro or `#[derive(StoryArg)]`, or `theoria-cli`; when adding a story or slice to the backlog; when a theoria test, mutant, or e2e run fails; and before a release. Not for writing stories in a crate that uses theoria, which is the shipped `theoria-usage` skill."
 metadata:
   internal: true
 ---
@@ -21,16 +21,23 @@ gates, and `skills/theoria-usage/` is what a consumer reads.
   `localStorage` that keep the selected story across reloads; a consumer's gallery gets it only when
   the stories crate forwards `csr` to theoria. `stories` compiles theoria's own
   stories.
-- `crates/theoria-macros`: `#[story]`. The proc-macro entry point is a thin
-  adapter; the logic is `story_impl`, which takes and returns
+- `crates/theoria-macros`: `#[story]` and `#[derive(StoryArg)]`. Each
+  proc-macro entry point is a thin adapter; the logic is `story_impl` and
+  `story_arg_impl` (with `named_fields` and `field_kinds`, which decide
+  what the derive refuses and how each field gets its control), which take and return
   `proc_macro2::TokenStream` so tests can call it. It emits
   `Story::__from_macro`, which is `#[doc(hidden)]` and not stable API.
   `theoria/src/lib.rs` has `extern crate self as theoria` so the macro's
   `theoria::` paths resolve when theoria uses it on itself. The macro does
   not read a parameter's type: it emits `<T as theoria::StoryArg>` calls
-  for every one, so a new control is a `StoryArg` impl in `theoria` (its
-  `Value`, its `ArgControl`, and `bind`), not a change to the macro, and an
-  unsupported type is a rustc trait error at the parameter.
+  for every one, and builds each arg through `theoria::__private::Plain::arg`,
+  so a new control is impls in `theoria` (a `Leaf` with its `ArgControl`,
+  through `value_arg!`), not a change to the macro, and an unsupported type
+  is a rustc trait error at the parameter. `#[derive(StoryArg)]`, beside `#[story]`,
+  implements `Plain` for a struct as an `Arg::group` of one arg per
+  field, each through `__private::Field` (every `Leaf`, and `&'static str`)
+  or `ColorField`. Those traits are public under the `#[doc(hidden)]`
+  `__private` only so the derive can name them from another crate.
 - `crates/theoria-cli`: the `theoria` binary, whose `main` only calls the
   library's `theoria_cli::run(args)`, so a consumer can build the CLI as a
   three-line package in its own workspace, from the theoria commit in its
@@ -60,7 +67,10 @@ a gallery from `theoria::stories`). Never put a `Gallery` inside a
   leptotes dev-dependency.
 - **Macro:** call `story_impl(attr, item)` and check the tokens, or use
   `#[story]` on a function in `lib.rs`'s `story_macro_tests` and check the
-  `Story` it builds (inside an `Owner`, since the args are signals).
+  `Story` it builds (inside an `Owner`, since the args are signals). The
+  derive's refusals and field kinds are tested in theoria-macros on
+  `named_fields` and `field_kinds`; what a derived struct draws and feeds
+  is tested on structs that derive it in `lib.rs`'s `derive_tests`.
 - **CLI:** `render` returns the harness's `Cargo.toml`, `src/main.rs`, and
   `Trunk.toml` as strings, and the tests parse the TOML and compare values.
   `run` is tested with the arguments a shell would pass, for its exit code
