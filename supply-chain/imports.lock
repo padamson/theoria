@@ -133,13 +133,6 @@ user-id = 6743
 user-login = "epage"
 user-name = "Ed Page"
 
-[[publisher.console_error_panic_hook]]
-version = "0.1.7"
-when = "2021-10-11"
-user-id = 696
-user-login = "fitzgen"
-user-name = "Nick Fitzgerald"
-
 [[publisher.displaydoc]]
 version = "0.2.7"
 when = "2026-07-28"

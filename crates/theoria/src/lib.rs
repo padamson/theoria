@@ -1021,9 +1021,50 @@ impl Stories {
     /// without the URL and `localStorage` code that keep the selected story.
     #[cfg(feature = "csr")]
     pub fn mount(self) {
-        console_error_panic_hook::set_once();
+        // Off wasm the JavaScript calls in the hook would panic inside it,
+        // aborting with no message; the default hook prints to stderr there.
+        #[cfg(target_arch = "wasm32")]
+        std::panic::set_hook(Box::new(log_to_console));
         leptos::mount::mount_to_body(move || self.gallery());
     }
+}
+
+/// Logs a panic to the browser console with the JavaScript stack that reached
+/// it.
+#[cfg(all(feature = "csr", target_arch = "wasm32"))]
+fn log_to_console(info: &std::panic::PanicHookInfo) {
+    let stack = stack_with_frames(100);
+    // The trailing blank lines keep Safari's devtools from rewriting the
+    // stack's Rust frames (console_error_panic_hook's issue #7).
+    web_sys::console::error_1(&format!("{info}\n\nStack:\n\n{stack}\n\n").into());
+}
+
+/// The JavaScript stack here, keeping up to `frames` frames where the engine
+/// limits them (V8 keeps 10 by default, which the panic machinery fills before
+/// the story's own code).
+///
+/// The limit is read and written through `Reflect`, so an engine without it
+/// is left alone and a frozen `Error` is not an exception.
+#[cfg(all(feature = "csr", target_arch = "wasm32"))]
+fn stack_with_frames(frames: u32) -> String {
+    use js_sys::Reflect;
+    let error_type = js_sys::Error::new("").constructor();
+    let key = js_sys::JsString::from("stackTraceLimit");
+    let limit = Reflect::get(&error_type, &key)
+        .ok()
+        .filter(|limit| limit.as_f64().is_some());
+    if limit.is_some() {
+        Reflect::set(&error_type, &key, &frames.into()).ok();
+    }
+    let error = js_sys::Error::new("");
+    if let Some(limit) = &limit {
+        Reflect::set(&error_type, &key, limit).ok();
+    }
+    // `js_sys::Error` has no `stack` getter.
+    Reflect::get(&error, &"stack".into())
+        .ok()
+        .and_then(|stack| stack.as_string())
+        .unwrap_or_default()
 }
 
 impl From<Vec<Story>> for Stories {

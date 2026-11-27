@@ -18,7 +18,6 @@
 use std::collections::BTreeSet;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, Result, ensure};
 use axum::Router;
@@ -26,6 +25,7 @@ use playwright_rs::protocol::click::KeyboardModifier;
 use playwright_rs::protocol::{Locator, Page, Playwright, SelectOption};
 use playwright_rs::{ClickOptions, expect, expect_page};
 use serde::Deserialize;
+use tokio::sync::mpsc::UnboundedReceiver;
 use tower_http::services::ServeDir;
 
 fn repo_root() -> PathBuf {
@@ -917,23 +917,35 @@ async fn the_picker_opens_one_step_off_a_color_with_alpha() -> Result<()> {
     .await
 }
 
+/// A message the page logged to its console.
+#[derive(Debug)]
+struct Logged {
+    /// `log`, `warning`, `error`, and so on.
+    kind: String,
+    text: String,
+}
+
+/// Every message the page logs to its console from now on, in order.
+async fn listen_to_console(page: &Page) -> Result<UnboundedReceiver<Logged>> {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    page.on_console(move |msg| {
+        tx.send(Logged {
+            kind: msg.type_().to_string(),
+            text: msg.text().to_string(),
+        })
+        .ok();
+        async { Ok(()) }
+    })
+    .await
+    .context("listen to the console")?;
+    Ok(rx)
+}
+
 #[tokio::test]
 #[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
 async fn a_color_the_picker_cannot_hold_logs_nothing_to_the_console() -> Result<()> {
     with_gallery(async |page: &Page| {
-        let logged = Arc::new(Mutex::new(Vec::new()));
-        let log = Arc::clone(&logged);
-        page.on_console(move |msg| {
-            let log = Arc::clone(&log);
-            async move {
-                log.lock()
-                    .expect("the console log")
-                    .push(msg.text().to_string());
-                Ok(())
-            }
-        })
-        .await
-        .context("listen to the console")?;
+        let mut console = listen_to_console(page).await?;
         select(page, "Knobs · color").await?;
         page.locator(".theoria-panel input[type=text]")
             .fill("teal", None)
@@ -944,9 +956,84 @@ async fn a_color_the_picker_cannot_hold_logs_nothing_to_the_console() -> Result<
             .await
             .context("the story gets the color")?;
 
-        let logged = logged.lock().expect("the console log").clone();
+        let logged: Vec<_> = std::iter::from_fn(|| console.try_recv().ok()).collect();
         ensure!(logged.is_empty(), "the console logged {logged:?}");
 
+        Ok(())
+    })
+    .await
+}
+
+/// Clicks the panic fixture's button and returns the console error that reports
+/// the panic, within five seconds. Without the panic hook `Stories::mount`
+/// sets, the browser reports only `RuntimeError: unreachable`, as a page error
+/// rather than a console message, so this fails.
+async fn the_error_a_panic_logs(page: &Page) -> Result<String> {
+    let mut console = listen_to_console(page).await?;
+    select(page, "Gallery · panic on click").await?;
+    page.locator(".theoria-stage .k-panic")
+        .click(None)
+        .await
+        .context("click the story's button")?;
+
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while let Some(logged) = console.recv().await {
+            if logged.kind == "error" && logged.text.starts_with("panicked at ") {
+                return Some(logged.text);
+            }
+        }
+        None
+    })
+    .await
+    .context("the console logs no panic within 5s of the click")?
+    .context("the console listener went away")
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_panic_in_a_story_logs_its_message_to_the_console() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        let error = the_error_a_panic_logs(page).await?;
+        ensure!(
+            error.contains("the story panicked on purpose"),
+            "the console logged {error:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+/// A hardened page (SES lockdown, say) freezes `Error`, so the hook cannot
+/// raise its stack trace limit there.
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_panic_is_logged_on_a_page_that_froze_error() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        page.evaluate::<(), ()>("() => { Object.freeze(Error); }", None)
+            .await
+            .context("freeze Error")?;
+        let error = the_error_a_panic_logs(page).await?;
+        ensure!(
+            error.contains("the story panicked on purpose"),
+            "the console logged {error:?}"
+        );
+        Ok(())
+    })
+    .await
+}
+
+/// The panic's location names only the line that panicked; the stack is what
+/// traces it back through the story's code, here by the fixture's module name,
+/// which the location (`gallery.stories.rs`) does not contain.
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_panic_in_a_story_logs_the_stack_that_reached_it() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        let error = the_error_a_panic_logs(page).await?;
+        ensure!(
+            error.contains("gallery_stories"),
+            "the console logged {error:?}"
+        );
         Ok(())
     })
     .await

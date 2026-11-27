@@ -19,13 +19,14 @@ pulldown-cmark = { version = "0.13", default-features = false, features = ["html
 # The `?story=` query in a story's URL, read and written the same way.
 form_urlencoded = "1"
 # Only for the gallery's localStorage and URL (the selected story across reloads
-# and links); pulled in by the csr feature, so ssr/leptotes builds don't see it.
-web-sys = { version = "0.3", optional = true, features = ["Window", "Storage", "Location", "History"] }
-# Set by `Stories::mount`.
-console_error_panic_hook = { version = "0.1", optional = true }
+# and links), and the console that `Stories::mount`'s panic hook logs to;
+# pulled in by the csr feature, so ssr/leptotes builds don't see it.
+web-sys = { version = "0.3", optional = true, features = ["Window", "Storage", "Location", "History", "console"] }
+# The JavaScript stack that the panic hook adds to what it logs.
+js-sys = { version = "0.3", optional = true }
 
 [features]
-csr = ["leptos/csr", "dep:web-sys", "dep:console_error_panic_hook"]
+csr = ["leptos/csr", "dep:web-sys", "dep:js-sys"]
 ssr = ["leptos/ssr"]
 hydrate = ["leptos/hydrate"]
 # Compiles the colocated `*.stories.rs` files (theoria's own components as

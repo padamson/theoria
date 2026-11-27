@@ -19,6 +19,9 @@ pub use story_nav::StoryNav;
 #[path = "controls.stories.rs"]
 mod controls_stories;
 #[cfg(feature = "stories")]
+#[path = "gallery.stories.rs"]
+mod gallery_stories;
+#[cfg(feature = "stories")]
 #[path = "show_code.stories.rs"]
 mod show_code_stories;
 #[cfg(feature = "stories")]
@@ -33,6 +36,7 @@ pub fn stories() -> crate::Stories {
         .into_iter()
         .chain(controls_stories::stories())
         .chain(show_code_stories::stories())
+        .chain(gallery_stories::stories())
         .collect()
 }
 
