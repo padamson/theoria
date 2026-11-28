@@ -68,6 +68,11 @@ exclude_re = [
     'components/story_nav.rs:.*replace Modifiers::of -> Self',
     'components/controls.rs:.*replace (parse|computed_background) -> ',
     'components/controls.rs:.*replace show with \(\)',
+    # Writing the clipboard runs only in the Copy button's `on:click`, and is
+    # a no-op without `csr`, so no native test reaches anything in `copy`.
+    # theoria-e2e reads the clipboard after a click and checks what Copy says
+    # with the clipboard there, refusing, and missing.
+    'components/controls.rs:.*(replace copy with \(\)|in copy)$',
     'components/gallery.rs:.*replace (show_in_url|replace_url|save_selected) with \(\)',
     'components/gallery.rs:.*replace storage -> ',
     # Reading them is equivalent without `csr`: `story_in_url` and

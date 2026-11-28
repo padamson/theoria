@@ -43,11 +43,18 @@ settle on can be pasted into the site.
   - [x] the struct an `Option` holds is `Default`, which the fields start
         at when the arg starts at `None`; without it the arg does not
         compile
-- **T18.4 — the value as code**
-  - [ ] the panel shows a struct arg's value as `{:#?}` writes it, with a
+- **T18.4 — the value as code** ✅
+  - [x] the panel shows a struct arg's value as `{:#?}` writes it, with a
         button that copies it
 
 ## Notes / refs
+
+- A struct that derives `StoryArg` must be `Debug` too (T18.4), since the
+  panel shows its value as `{:#?}` writes it. The text is the struct's own
+  `Debug`, so a `Bounded` or `Color` field reads as theoria's struct
+  (`Bounded { value: 0.5, min: Some(0.0), .. }`), not as the code that
+  builds it; a `&'static str` field, which pyle's `Theme` uses, reads as
+  the literal to paste.
 
 - Ruled 2026-11-27: an `Option` of a struct needs the struct to be
   `Default`, where its fields start when the arg starts at `None` (a site

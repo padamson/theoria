@@ -97,7 +97,7 @@ fn knobs_labelled_choice(font: Choice<&'static str>) -> impl IntoView {
 }
 
 /// A card's look, as a struct whose fields are the controls.
-#[derive(Clone, StoryArg)]
+#[derive(Clone, Debug, StoryArg)]
 struct Card {
     /// The card's heading.
     title: &'static str,
@@ -118,7 +118,7 @@ struct Card {
 }
 
 /// A line's look, as a struct that is a field of `Card`.
-#[derive(Clone, StoryArg)]
+#[derive(Clone, Debug, StoryArg)]
 struct Border {
     /// The line's color, any CSS color.
     #[story_arg(color)]
@@ -128,7 +128,7 @@ struct Border {
 }
 
 /// A shadow under the card, as a struct an `Option` holds.
-#[derive(Clone, StoryArg)]
+#[derive(Clone, Debug, StoryArg)]
 struct Shadow {
     /// The shadow's color, any CSS color.
     #[story_arg(color)]
@@ -153,7 +153,8 @@ impl Default for Shadow {
 /// `#[story_arg(color)]`. A field whose type derives `StoryArg` too, such as
 /// `border`, is a group of its own fields under its name. An `Option` of one,
 /// such as `shadow`, has a switch: off is `None`, and on again brings back the
-/// fields as they were left.
+/// fields as they were left. Under the fields is the card as `{:#?}` writes
+/// it, which **Copy** puts on the clipboard.
 #[story(
     name = "Knobs · struct",
     card = Card {

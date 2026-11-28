@@ -54,7 +54,7 @@ Backlog priority tiers (and Rust/Leptos difficulty + rationale) come from the
 | T13 | **Autodocs** — per-component page: Markdown description + args table + controls + live story + show-code | ✅ done |
 | T17 | **Typed controls**: args as signals, bounded numbers, color, choice | ✅ done ([T17](T17-typed-controls.md)) |
 | T14 | **A URL for each story**: `?story=<full name>` opens it; e2e drives stories by URL | T14.0 done ([T14](T14-deep-linking.md)) |
-| T18 | **Struct playgrounds**: `#[derive(StoryArg)]`, a control per field, groups, reset, the value as code | in progress ([T18](T18-struct-playgrounds.md)) |
+| T18 | **Struct playgrounds**: `#[derive(StoryArg)]`, a control per field, groups, reset, the value as code | ✅ done ([T18](T18-struct-playgrounds.md)) |
 
 **Backlog** (pull when an slp slice needs it)
 

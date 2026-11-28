@@ -45,14 +45,20 @@
   list, or a label no option has, panics when the story is built, and a
   `Choice` arg with no list in the attribute does not compile. The body
   reads the selected value with `.value()`.
-- `#[derive(Clone, StoryArg)]` on a struct of named fields (no generic
+- `#[derive(Clone, Debug, StoryArg)]` on a struct of named fields (no generic
   parameters or where clause)
   makes it one arg, written `theme: Theme` or `theme: Signal<Theme>`, with
   its default in the attribute as a value of the struct (`theme = THEME`,
   a `const` or any expression). Each field gets the control its type
   picks, as a parameter's does, and a `&'static str` field is a text box;
   the panel draws them under the arg's name, each with the field's doc
-  comment as Markdown. `#[story_arg(color)]` on a `&'static str` field
+  comment as Markdown, and under them the arg's value as `{:#?}` writes
+  it, with a Copy button (named `Copy <arg>`) that puts that text on the
+  clipboard and reads Copied, or Failed where the browser refuses, for two
+  seconds. Without `Debug` the struct does not compile ("`Theme`
+  doesn't implement `Debug`"). The text is the struct's own `Debug`, so a
+  `&'static str` field reads as a string literal, but a `Bounded` or
+  `Color` field reads as theoria's struct, not as the code that builds it. `#[story_arg(color)]` on a `&'static str` field
   makes it a color, and on the struct makes every field written
   `&'static str` one (a type alias for it is not seen there). `#[story_arg(skip)]` keeps a field at its default with no control.
   A field whose type also derives `StoryArg` (a `Palette` inside a

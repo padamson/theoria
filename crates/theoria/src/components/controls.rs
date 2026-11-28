@@ -284,9 +284,70 @@ fn row(arg: Arg) -> AnyView {
                 <div class="control-description"><Markdown text=text /></div>
             })}
             {body}
+            {arg.code().map(|code| code_block(name, code))}
         </div>
     }
     .into_any()
+}
+
+/// The arg's value as code, with a button that copies it, and reads whether
+/// it did for a moment.
+fn code_block(name: &'static str, code: Signal<String>) -> impl IntoView {
+    let said = RwSignal::new("");
+    let done = move |copied: bool| {
+        said.try_set(copy_said(copied));
+        set_timeout(
+            move || {
+                said.try_set("");
+            },
+            std::time::Duration::from_secs(2),
+        );
+    };
+    view! {
+        <div class="control-code">
+            <pre><code>{code}</code></pre>
+            <span class="control-copied" role="status">{said}</span>
+            <button
+                type="button"
+                class="control-copy"
+                aria-label=format!("Copy {name}")
+                on:click=move |_| copy(&code.get_untracked(), done)
+            >
+                {move || match said.get() {
+                    "" => "Copy",
+                    said => said,
+                }}
+            </button>
+        </div>
+    }
+}
+
+/// What the Copy button reads once the write has landed or failed.
+pub(super) fn copy_said(copied: bool) -> &'static str {
+    if copied { "Copied" } else { "Failed" }
+}
+
+/// Put `text` on the clipboard, then call `done` with whether it is there
+/// (no-op off the browser).
+fn copy(text: &str, done: impl FnOnce(bool) + 'static) {
+    #[cfg(feature = "csr")]
+    {
+        // web-sys types `clipboard` as always there, but a page that is not
+        // a secure context has none.
+        let Some(clipboard) = web_sys::window()
+            .map(|window| window.navigator().clipboard())
+            .filter(|clipboard| !clipboard.is_undefined())
+        else {
+            done(false);
+            return;
+        };
+        let written = wasm_bindgen_futures::JsFuture::from(clipboard.write_text(text));
+        leptos::task::spawn_local(async move { done(written.await.is_ok()) });
+    }
+    #[cfg(not(feature = "csr"))]
+    {
+        let _ = (text, done);
+    }
 }
 
 /// The editable widget for a control that is not a group.

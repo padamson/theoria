@@ -312,6 +312,8 @@ const GALLERY_INDEX_HTML: &str = r#"<!DOCTYPE html>
       .theoria-missing { margin: 0; color: #8a8275; }
       /* Right-hand panel: Markdown description, controls, and show-code. */
       .theoria-panel { flex: 0 0 280px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; height: 100%; box-sizing: border-box; }
+      /* The panel scrolls; its parts keep their height rather than shrink. */
+      .theoria-panel > * { flex: none; }
       .theoria-md { font-size: 13px; line-height: 1.55; color: #4a463d; }
       .theoria-md > :first-child { margin-top: 0; }
       .theoria-md h1, .theoria-md h2, .theoria-md h3 { margin: .5em 0 .3em; line-height: 1.2; }
@@ -336,6 +338,12 @@ const GALLERY_INDEX_HTML: &str = r#"<!DOCTYPE html>
       .theoria-controls .control-description .theoria-md > :last-child { margin-bottom: 0; }
       .theoria-controls .control-fields { margin-top: 2px; padding-left: 8px; border-left: 2px solid #e3dccb; }
       .theoria-controls .control-fields .control-row { padding: 6px 0 6px 2px; }
+      .theoria-controls .control-code { position: relative; margin-top: 6px; }
+      .theoria-controls .control-code pre { max-height: 16em; margin: 0; padding: 8px 10px; border-radius: 6px; font-size: 12px; }
+      /* What Copy did, for a screen reader; the button's label shows it. */
+      .theoria-controls .control-copied { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+      /* As wide reading Copied or Failed as reading Copy. */
+      .theoria-controls .control-copy { position: absolute; top: 4px; right: 4px; min-width: 5.5em; padding: 1px 8px; border: 1px solid #5c574b; border-radius: 4px; background: #3a372f; color: #f3eee3; font: inherit; font-size: 11px; text-align: center; cursor: pointer; }
       .theoria-bounded { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
       .theoria-bounded input[type=number] { flex: 1 1 4.5em; min-width: 0; }
       .theoria-color { display: flex; gap: 8px; align-items: center; }
@@ -346,7 +354,8 @@ const GALLERY_INDEX_HTML: &str = r#"<!DOCTYPE html>
       .theoria-color input[type=text] { flex: 1; min-width: 0; }
       .theoria-code { font-size: 12px; }
       .theoria-code summary { cursor: pointer; color: #5c6b4f; font-weight: 600; }
-      .theoria-code pre { margin: 8px 0 0; padding: 12px; background: #2c2a25; color: #f3eee3; border-radius: 10px; overflow: auto; }
+      .theoria-code pre { margin: 8px 0 0; padding: 12px; border-radius: 10px; }
+      .theoria-code pre, .theoria-controls .control-code pre { background: #2c2a25; color: #f3eee3; overflow: auto; }
     </style>
   </head>
   <body></body>

@@ -1889,6 +1889,7 @@ dependencies = [
  "leptotes",
  "pulldown-cmark",
  "theoria-macros",
+ "wasm-bindgen-futures",
  "web-sys",
 ]
 

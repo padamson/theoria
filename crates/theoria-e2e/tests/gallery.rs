@@ -1408,6 +1408,331 @@ async fn a_fields_description_sits_as_far_from_its_control_as_from_its_name() ->
     .await
 }
 
+/// The card arg's group in the panel.
+fn card(page: &Page) -> Locator {
+    page.locator(r#".theoria-panel [role=group][aria-label="card"]"#)
+}
+
+/// The code under the card arg's controls.
+fn card_code(page: &Page) -> Locator {
+    card(page).locator("> .control-code code")
+}
+
+/// The card's Copy button.
+fn copy_card(page: &Page) -> Locator {
+    by_role(&card(page), AriaRole::Button, "Copy card")
+}
+
+/// Types a title over the card's "Patio" and waits for the card's code to be
+/// what it was with that one string changed.
+async fn retitle_the_card(page: &Page) -> Result<()> {
+    let before = card_code(page)
+        .text_content()
+        .await?
+        .context("the card's code has text")?;
+    ensure!(
+        before.contains(r#""Patio""#),
+        "the card's code has no \"Patio\" title to change: {before}"
+    );
+    by_role(&card(page), AriaRole::Textbox, "title")
+        .fill("Porch", None)
+        .await
+        .context("type a title into the card")?;
+
+    expect(card_code(page))
+        .to_have_text(&before.replace(r#""Patio""#, r#""Porch""#))
+        .await
+        .context("the card's code is the same but for the title typed")
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn an_edit_to_a_field_rewrites_the_struct_args_code() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · struct").await?;
+        retitle_the_card(page).await
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn copy_puts_the_struct_args_code_on_the_clipboard() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        page.context()?
+            .grant_permissions(&["clipboard-read", "clipboard-write"], None)
+            .await
+            .context("let the page use the clipboard")?;
+        select(page, "Knobs · struct").await?;
+        page.evaluate::<(), ()>("() => navigator.clipboard.writeText('-')", None)
+            .await
+            .context("put a placeholder on the clipboard")?;
+        copy_card(page)
+            .click(None)
+            .await
+            .context("click the card's Copy button")?;
+
+        let shown = card_code(page)
+            .text_content()
+            .await?
+            .context("the card's code has text")?;
+        // The click does not wait for the write, so read until the placeholder
+        // is gone, for a second at most.
+        let copied: String = page
+            .evaluate::<(), _>(
+                "async () => { for (let i = 0; i < 50; i++) { const text = await navigator.clipboard.readText(); if (text !== '-') return text; await new Promise(r => setTimeout(r, 20)); } return '-'; }",
+                None,
+            )
+            .await
+            .context("read the clipboard")?;
+        assert_eq!(copied, shown);
+
+        Ok(())
+    })
+    .await
+}
+
+/// Every error the page throws and does not catch, from now on.
+async fn listen_to_page_errors(page: &Page) -> Result<UnboundedReceiver<String>> {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    page.on_pageerror(move |message| {
+        tx.send(message).ok();
+        async { Ok(()) }
+    })
+    .await
+    .context("listen to page errors")?;
+    Ok(rx)
+}
+
+/// A `navigator.clipboard` that is not there, as on a page that is not a
+/// secure context.
+const NO_CLIPBOARD: &str = "undefined";
+
+/// A `navigator.clipboard` that refuses every write.
+const REFUSING_CLIPBOARD: &str =
+    "({ writeText: () => Promise.reject(new DOMException('refused', 'NotAllowedError')) })";
+
+/// Run `body` on the card's story, on a page whose `navigator.clipboard` is
+/// `clipboard`, a JavaScript expression.
+async fn with_a_clipboard(
+    clipboard: &str,
+    body: impl AsyncFnOnce(&Page) -> Result<()>,
+) -> Result<()> {
+    let script = format!(
+        "Object.defineProperty(Navigator.prototype, 'clipboard', {{ get: () => {clipboard} }})"
+    );
+    with_site(async |page: &Page, site: &Site| {
+        page.add_init_script(&script)
+            .await
+            .context("replace the page's clipboard")?;
+        open(page, &site.story("Knobs · struct")).await?;
+        expect_marked(page, "Knobs · struct").await?;
+        body(page).await
+    })
+    .await
+}
+
+/// What the page throws when the card's Copy button is clicked with
+/// `clipboard`. The card is retitled after the click, which shows the page
+/// still works and gives an error from the click time to arrive.
+async fn errors_from_a_copy_with(clipboard: &str) -> Result<Vec<String>> {
+    let mut errors = Vec::new();
+    with_a_clipboard(clipboard, async |page: &Page| {
+        let mut thrown = listen_to_page_errors(page).await?;
+        copy_card(page)
+            .click(None)
+            .await
+            .context("click the card's Copy button")?;
+        retitle_the_card(page).await?;
+
+        errors.extend(std::iter::from_fn(|| thrown.try_recv().ok()));
+        Ok(())
+    })
+    .await?;
+    Ok(errors)
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn copy_on_a_page_with_no_clipboard_throws_nothing() -> Result<()> {
+    let thrown = errors_from_a_copy_with(NO_CLIPBOARD).await?;
+    assert_eq!(thrown, Vec::<String>::new());
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn copy_the_browser_refuses_throws_nothing() -> Result<()> {
+    let thrown = errors_from_a_copy_with(REFUSING_CLIPBOARD).await?;
+    assert_eq!(thrown, Vec::<String>::new());
+    Ok(())
+}
+
+/// What the card's Copy button tells a screen reader it did.
+fn copy_status(page: &Page) -> Locator {
+    card(page).locator("> .control-code [role=status]")
+}
+
+/// Clicks the card's Copy button with `clipboard` and waits for its label
+/// to read `said`.
+async fn copy_with_says(clipboard: &str, said: &str) -> Result<()> {
+    with_a_clipboard(clipboard, async |page: &Page| {
+        copy_card(page)
+            .click(None)
+            .await
+            .context("click the card's Copy button")?;
+        expect(copy_card(page))
+            .to_have_text(said)
+            .await
+            .with_context(|| format!("Copy reads {said:?}"))
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn copy_says_it_copied() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        page.context()?
+            .grant_permissions(&["clipboard-write"], None)
+            .await
+            .context("let the page write the clipboard")?;
+        select(page, "Knobs · struct").await?;
+        copy_card(page)
+            .click(None)
+            .await
+            .context("click the card's Copy button")?;
+
+        expect(copy_card(page))
+            .to_have_text("Copied")
+            .await
+            .context("Copy reads Copied")
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn what_copy_did_is_told_to_a_screen_reader() -> Result<()> {
+    with_a_clipboard(REFUSING_CLIPBOARD, async |page: &Page| {
+        copy_card(page)
+            .click(None)
+            .await
+            .context("click the card's Copy button")?;
+        expect(copy_status(page))
+            .to_have_text("Failed")
+            .await
+            .context("the status region says Failed")
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn copy_on_a_page_with_no_clipboard_says_it_failed() -> Result<()> {
+    copy_with_says(NO_CLIPBOARD, "Failed").await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn copy_the_browser_refuses_says_it_failed() -> Result<()> {
+    copy_with_says(REFUSING_CLIPBOARD, "Failed").await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn copy_reads_copy_again_after_a_moment() -> Result<()> {
+    with_a_clipboard(REFUSING_CLIPBOARD, async |page: &Page| {
+        copy_card(page)
+            .click(None)
+            .await
+            .context("click the card's Copy button")?;
+        expect(copy_card(page))
+            .to_have_text("Failed")
+            .await
+            .context("Copy reads Failed")?;
+        expect(copy_card(page))
+            .to_have_text("Copy")
+            .await
+            .context("Copy reads Copy again")
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn copy_is_as_wide_reading_copied_as_reading_copy() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        page.context()?
+            .grant_permissions(&["clipboard-write"], None)
+            .await
+            .context("let the page write the clipboard")?;
+        select(page, "Knobs · struct").await?;
+        let width = async || -> Result<f64> {
+            Ok(copy_card(page)
+                .bounding_box()
+                .await?
+                .context("the Copy button is laid out")?
+                .width)
+        };
+        let before = width().await?;
+        copy_card(page)
+            .click(None)
+            .await
+            .context("click the card's Copy button")?;
+        expect(copy_card(page))
+            .to_have_text("Copied")
+            .await
+            .context("Copy reads Copied")?;
+
+        assert_eq!(width().await?, before);
+        Ok(())
+    })
+    .await
+}
+
+/// `[clientHeight, scrollHeight]` of what `locator` finds.
+async fn heights(locator: &Locator, what: &str) -> Result<(f64, f64)> {
+    locator
+        .evaluate("el => [el.clientHeight, el.scrollHeight]", None::<()>)
+        .await
+        .with_context(|| format!("measure {what}"))
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn controls_taller_than_the_window_are_shown_whole_in_a_panel_that_scrolls() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · struct").await?;
+        let (shown, needed) = heights(&page.locator(".theoria-controls"), "the controls").await?;
+        ensure!(
+            needed <= shown,
+            "the controls need {needed}px and show {shown}px"
+        );
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_long_value_scrolls_inside_its_block() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · struct").await?;
+        let (shown, needed) = heights(
+            &card(page).locator("> .control-code pre"),
+            "the card's code",
+        )
+        .await?;
+        ensure!(
+            needed > shown,
+            "the card's code shows all {needed}px of itself"
+        );
+        Ok(())
+    })
+    .await
+}
+
 #[tokio::test]
 #[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
 async fn a_control_is_found_by_its_args_name() -> Result<()> {

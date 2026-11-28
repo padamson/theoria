@@ -5,8 +5,8 @@ use leptos::prelude::*;
 use leptotes::{Dom, Element};
 
 use super::Controls;
-use super::controls::picker_start;
-use crate::{Arg, Bounded, Choice, Color};
+use super::controls::{copy_said, picker_start};
+use crate::{Arg, Bounded, Choice, Color, Story, StoryArg, story};
 
 /// `attr` on every element in `elements`, in order, `None` where it is missing.
 pub(super) fn each<'a>(elements: Vec<Element<'a>>, attr: &str) -> Vec<Option<&'a str>> {
@@ -499,4 +499,100 @@ fn an_args_description_is_drawn_as_markdown_with_its_control() {
         "ft",
         "{dom}"
     );
+}
+
+#[derive(Clone, Debug, StoryArg)]
+struct Size {
+    width: f64,
+    edge: Edge,
+}
+
+#[derive(Clone, Debug, Default, StoryArg)]
+struct Edge {
+    depth: f64,
+}
+
+#[story(size = Size { width: 12.0, edge: Edge { depth: 2.0 } })]
+fn sized(size: Size, label: String) -> impl IntoView {
+    view! { <p>{label}{size.width}</p> }
+}
+
+#[story]
+fn edged(edge: Option<Edge>) -> impl IntoView {
+    view! { <p>{edge.map(|edge| edge.depth)}</p> }
+}
+
+fn panel_of(story: Story) -> Dom {
+    leptotes::dom(move || view! { <Controls args=story.args().to_vec() /> })
+}
+
+#[test]
+fn a_struct_arg_shows_its_value_as_pretty_debug_writes_it() {
+    let dom = panel_of(sized());
+    assert_eq!(
+        dom.find("[role=group][aria-label=size] .control-code code")
+            .text_content(),
+        "Size {\n    width: 12.0,\n    edge: Edge {\n        depth: 2.0,\n    },\n}",
+        "{dom}"
+    );
+}
+
+#[test]
+fn a_struct_inside_a_struct_arg_shows_no_value_of_its_own() {
+    let dom = panel_of(sized());
+    assert_eq!(dom.count(".control-code"), 1, "{dom}");
+}
+
+#[test]
+fn an_arg_that_is_not_a_struct_shows_no_value() {
+    let dom = three_args();
+    assert_eq!(dom.count(".control-code"), 0, "{dom}");
+}
+
+#[test]
+fn a_struct_arg_switched_off_shows_its_value_as_none() {
+    let dom = panel_of(edged());
+    assert_eq!(
+        dom.find(".control-code code").text_content(),
+        "None",
+        "{dom}"
+    );
+}
+
+#[test]
+fn a_struct_args_copy_button_is_named_for_it() {
+    let dom = panel_of(sized());
+    assert_eq!(
+        dom.find("[role=group][aria-label=size] button.control-copy")
+            .attr("aria-label"),
+        Some("Copy size"),
+        "{dom}"
+    );
+}
+
+#[test]
+fn what_copy_says_starts_empty_in_a_status_region() {
+    let dom = panel_of(sized());
+    assert_eq!(
+        dom.find("[role=group][aria-label=size] .control-code [role=status]")
+            .text(),
+        "",
+        "{dom}"
+    );
+}
+
+#[test]
+fn a_copy_that_lands_says_copied() {
+    assert_eq!(copy_said(true), "Copied");
+}
+
+#[test]
+fn a_copy_that_fails_says_so() {
+    assert_eq!(copy_said(false), "Failed");
+}
+
+#[test]
+fn a_struct_args_copy_button_reads_copy() {
+    let dom = panel_of(sized());
+    assert_eq!(dom.find("button.control-copy").text(), "Copy", "{dom}");
 }

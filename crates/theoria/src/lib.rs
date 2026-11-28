@@ -405,6 +405,7 @@ pub struct Arg {
     resets: Option<Trigger>,
     description: Option<&'static str>,
     switch: Option<RwSignal<bool>>,
+    code: Option<Signal<String>>,
 }
 
 impl Arg {
@@ -447,6 +448,7 @@ impl Arg {
             resets: Some(resets),
             description: None,
             switch: None,
+            code: None,
         }
     }
 
@@ -493,6 +495,7 @@ impl Arg {
             resets: None,
             description: None,
             switch: None,
+            code: None,
         }
     }
 
@@ -548,6 +551,23 @@ impl Arg {
     #[must_use]
     pub fn description(&self) -> Option<&'static str> {
         self.description
+    }
+
+    /// The arg, showing `value` as `{:#?}` writes it.
+    pub(crate) fn showing<T: std::fmt::Debug + Send + Sync + 'static>(
+        mut self,
+        value: Signal<T>,
+    ) -> Self {
+        self.code = Some(Signal::derive(move || {
+            value.with(|value| format!("{value:#?}"))
+        }));
+        self
+    }
+
+    /// The arg's value as code, for a struct arg that is not a field of
+    /// another.
+    pub(crate) fn code(&self) -> Option<Signal<String>> {
+        self.code
     }
 
     /// Put the arg back to its default.
@@ -622,7 +642,8 @@ pub mod __private {
 
     impl<T: Plain> Field for T {
         fn field(name: &'static str, ty: &'static str, start: Self) -> (Signal<Self>, Arg) {
-            T::arg(name, ty, start)
+            let (value, arg) = T::arg(name, ty, start);
+            (value, Arg { code: None, ..arg })
         }
     }
 
@@ -660,22 +681,24 @@ pub mod __private {
 
     /// The struct's value, read from its fields' signals, and the group of
     /// their args.
-    pub fn group<T: Send + Sync + 'static>(
+    pub fn group<T: Struct + Send + Sync + 'static>(
         name: &'static str,
         ty: &'static str,
         args: Vec<Arg>,
         value: impl Fn() -> T + Send + Sync + 'static,
     ) -> (Signal<T>, Arg) {
-        (Signal::derive(value), Arg::group(name, ty, args))
+        let value = Signal::derive(value);
+        (value, Arg::group(name, ty, args).showing(value))
     }
 
-    /// A struct that derives `StoryArg`, which an `Option` can hold.
+    /// A struct that derives `StoryArg`, which an `Option` can hold, and
+    /// whose value the panel shows as `{:#?}` writes it.
     #[diagnostic::on_unimplemented(
         message = "`Option<{Self}>` has no control",
         label = "not a struct that derives StoryArg",
         note = "an `Option` arg or field holds a struct that derives StoryArg and Default"
     )]
-    pub trait Struct {}
+    pub trait Struct: std::fmt::Debug {}
 
     pub fn read<T: Clone + Send + Sync + 'static>(signal: Signal<T>) -> T {
         signal.get()
@@ -721,10 +744,11 @@ pub mod __private {
 /// }
 /// ```
 ///
-/// A struct that derives `StoryArg` (and `Clone`) is one arg with a control
-/// per field, picked by the field's type as a parameter's is, with
+/// A struct that derives `StoryArg` (and `Clone` and `Debug`) is one arg with
+/// a control per field, picked by the field's type as a parameter's is, with
 /// `&'static str` a text box. Each field's doc comment is shown with its
-/// control. `#[story_arg(color)]` makes a `&'static str` field a color, and
+/// control, and the arg's value is shown under them as `{:#?}` writes it,
+/// with a button that copies it. `#[story_arg(color)]` makes a `&'static str` field a color, and
 /// on the struct makes every field written `&'static str` one. An edited
 /// `&'static str` is leaked once per distinct text. A field whose type
 /// derives `StoryArg` too is a group of its own fields, under the field's
@@ -737,7 +761,7 @@ pub mod __private {
 /// use leptos::prelude::*;
 /// use theoria::{StoryArg, story};
 ///
-/// #[derive(Clone, Default, StoryArg)]
+/// #[derive(Clone, Debug, Default, StoryArg)]
 /// #[story_arg(color)]
 /// struct Palette {
 ///     paper: &'static str,
@@ -750,12 +774,23 @@ pub mod __private {
 /// }
 /// ```
 ///
-/// An `Option` of anything but such a struct has no control:
+/// A struct that is not `Debug` does not compile:
 ///
 /// ```compile_fail,E0277
 /// use theoria::StoryArg;
 ///
 /// #[derive(Clone, StoryArg)]
+/// struct Card {
+///     width: f64,
+/// }
+/// ```
+///
+/// An `Option` of anything but such a struct has no control:
+///
+/// ```compile_fail,E0277
+/// use theoria::StoryArg;
+///
+/// #[derive(Clone, Debug, StoryArg)]
 /// struct Card {
 ///     width: Option<f64>,
 /// }
@@ -767,7 +802,7 @@ pub mod __private {
 /// use leptos::prelude::*;
 /// use theoria::{StoryArg, story};
 ///
-/// #[derive(Clone, StoryArg)]
+/// #[derive(Clone, Debug, StoryArg)]
 /// struct Palette {
 ///     paper: String,
 /// }
@@ -782,7 +817,7 @@ pub mod __private {
 /// use leptos::prelude::*;
 /// use theoria::{StoryArg, story};
 ///
-/// #[derive(Clone, StoryArg)]
+/// #[derive(Clone, Debug, StoryArg)]
 /// struct Theme {
 ///     /// The page's background.
 ///     #[story_arg(color)]
@@ -806,7 +841,7 @@ pub mod __private {
 /// ```compile_fail,E0277
 /// use theoria::StoryArg;
 ///
-/// #[derive(Clone, StoryArg)]
+/// #[derive(Clone, Debug, StoryArg)]
 /// struct Theme {
 ///     paper: &'static str,
 ///     version: u32,
@@ -818,7 +853,7 @@ pub mod __private {
 /// ```compile_fail,E0277
 /// use theoria::StoryArg;
 ///
-/// #[derive(Clone, StoryArg)]
+/// #[derive(Clone, Debug, StoryArg)]
 /// struct Theme {
 ///     #[story_arg(color)]
 ///     paper: String,
@@ -931,10 +966,8 @@ impl<T: __private::Struct + __private::Plain + Default> __private::Plain for Opt
     fn arg(name: &'static str, ty: &'static str, start: Self) -> (Signal<Self>, Arg) {
         let on = RwSignal::new(start.is_some());
         let (fields, group) = T::arg(name, ty, start.unwrap_or_default());
-        (
-            Signal::derive(move || on.get().then(|| fields.get())),
-            group.switched(on),
-        )
+        let value = Signal::derive(move || on.get().then(|| fields.get()));
+        (value, group.switched(on).showing(value))
     }
 }
 
@@ -2083,7 +2116,7 @@ mod derive_tests {
     use super::*;
 
     /// Every kind of field the derive draws.
-    #[derive(Clone, StoryArg)]
+    #[derive(Clone, Debug, StoryArg)]
     struct Fields {
         /// Whether the card is raised.
         raised: bool,
@@ -2212,7 +2245,7 @@ mod derive_tests {
         });
     }
 
-    #[derive(Clone, StoryArg)]
+    #[derive(Clone, Debug, StoryArg)]
     #[story_arg(color)]
     struct Palette {
         ink: &'static str,
@@ -2288,7 +2321,7 @@ mod derive_tests {
     }
 
     /// A struct that implements `Drop` refuses a move out of its fields.
-    #[derive(Clone, StoryArg)]
+    #[derive(Clone, Debug, StoryArg)]
     struct Dropped {
         label: String,
     }
@@ -2314,7 +2347,7 @@ mod derive_tests {
     mod camel_case {
         use super::*;
 
-        #[derive(Clone, StoryArg)]
+        #[derive(Clone, Debug, StoryArg)]
         pub(super) struct Camel {
             #[allow(non_snake_case)]
             pub(super) inkColor: &'static str,
@@ -2445,7 +2478,7 @@ mod derive_tests {
         });
     }
 
-    #[derive(Clone, StoryArg)]
+    #[derive(Clone, Debug, StoryArg)]
     struct Shade {
         #[story_arg(color)]
         ink: &'static str,
@@ -2463,7 +2496,7 @@ mod derive_tests {
         }
     }
 
-    #[derive(Clone, StoryArg)]
+    #[derive(Clone, Debug, StoryArg)]
     struct Layered {
         label: String,
         /// The heading's look.
@@ -2522,12 +2555,12 @@ mod derive_tests {
         });
     }
 
-    #[derive(Clone, StoryArg)]
+    #[derive(Clone, Debug, StoryArg)]
     struct Caption {
         text: &'static str,
     }
 
-    #[derive(Clone, StoryArg)]
+    #[derive(Clone, Debug, StoryArg)]
     #[story_arg(color)]
     struct Inked {
         ink: &'static str,
@@ -2584,7 +2617,7 @@ mod derive_tests {
         });
     }
 
-    #[derive(Clone, StoryArg)]
+    #[derive(Clone, Debug, StoryArg)]
     struct Lit {
         label: String,
         glow: Option<Shade>,
@@ -2753,6 +2786,61 @@ mod derive_tests {
         Owner::new().with(|| {
             let on = glowing().arg("glow").unwrap().switch().expect("a switch");
             assert!(!on.get_untracked());
+        });
+    }
+
+    /// The code the story's arg called `name` shows.
+    fn code(story: &Story, name: &str) -> String {
+        story
+            .arg(name)
+            .unwrap()
+            .code()
+            .unwrap_or_else(|| panic!("`{name}` shows no code"))
+            .get_untracked()
+    }
+
+    #[test]
+    fn a_struct_args_code_is_its_value_as_pretty_debug_writes_it() {
+        Owner::new().with(|| {
+            assert_eq!(
+                code(&lit_on(), "lit"),
+                "Lit {\n    label: \"Patio\",\n    glow: Some(\n        Shade {\n            ink: \"#243832\",\n            depth: 2.0,\n        },\n    ),\n}"
+            );
+        });
+    }
+
+    #[test]
+    fn a_struct_args_code_follows_an_edit_to_a_field() {
+        Owner::new().with(|| {
+            let story = lit_on();
+            glow_depth(&story).set(3.5);
+            assert_eq!(
+                code(&story, "lit"),
+                "Lit {\n    label: \"Patio\",\n    glow: Some(\n        Shade {\n            ink: \"#243832\",\n            depth: 3.5,\n        },\n    ),\n}"
+            );
+        });
+    }
+
+    #[test]
+    fn a_struct_that_is_a_field_of_a_struct_arg_has_no_code() {
+        Owner::new().with(|| {
+            let shade = field_of(group_of(&layered(), "layered"), "shade");
+            assert!(shade.code().is_none(), "`shade` shows code");
+        });
+    }
+
+    #[test]
+    fn an_option_args_code_is_none_while_it_is_off() {
+        Owner::new().with(|| assert_eq!(code(&glowing(), "glow"), "None"));
+    }
+
+    #[test]
+    fn an_option_args_code_is_the_struct_in_some_while_it_is_on() {
+        Owner::new().with(|| {
+            assert_eq!(
+                code(&glowing_from_the_start(), "glow"),
+                "Some(\n    Shade {\n        ink: \"#243832\",\n        depth: 2.0,\n    },\n)"
+            );
         });
     }
 }
