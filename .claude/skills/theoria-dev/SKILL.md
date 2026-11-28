@@ -18,7 +18,7 @@ gates, and `skills/theoria-usage/` is what a consumer reads.
   `StoryNav`, `Controls`, `ShowCode`, `Markdown`). It enables no Leptos
   runtime of its own. The `csr`, `ssr`, and `hydrate` features pass through
   to Leptos; `csr` also pulls in `web-sys` for the URL (`?story=`) and the
-  `localStorage` that keep the selected story across reloads; a consumer's gallery gets it only when
+  `localStorage` that keep the selected story and the panel's width across reloads; a consumer's gallery gets it only when
   the stories crate forwards `csr` to theoria. `stories` compiles theoria's own
   stories.
 - `crates/theoria-macros`: `#[story]` and `#[derive(StoryArg)]`. Each
@@ -112,7 +112,8 @@ Mutation testing covers all three crates. The excluded mutants are
 reachable only end to end: `main`, `trunk`, and the `story` adapter; the
 `*.stories.rs` files and `components::stories`, which theoria-e2e opens;
 and theoria's browser-only code (the URL and `localStorage`, a click's
-modifier keys, the control handlers' event reads), which a leptotes render
+modifier keys, the control handlers' event reads, the divider's pointer
+capture and its measure of the drawn columns), which a leptotes render
 never runs. Logic an event handler runs goes in a function a native test
 can call (`Bounded::set`), so only the handler's wiring is left to e2e.
 
