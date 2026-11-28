@@ -13,7 +13,8 @@
 - `#[story(name = "Group/Name", arg = default, ...)]` on `fn x(arg: T,
   ...) -> impl IntoView`: generates `fn x() -> Story` with one control per
   parameter. `T` is `bool`, `f64`, `String`, `Bounded`, `Color`,
-  `Choice<V>`, or a struct that derives `StoryArg`, or `Signal<T>` over
+  `Choice<V>`, or a struct that derives `StoryArg` (or an `Option` of one),
+  or `Signal<T>` over
   one of them (the types that implement `theoria::StoryArg`; implement it
   only with the derive);
   anything else is a compile error at the parameter, "`i32` cannot be a
@@ -57,7 +58,16 @@
   A field whose type also derives `StoryArg` (a `Palette` inside a
   `Theme`) is a group of its own fields under the field's name, with the
   field's doc comment, and takes its options from its own struct: the
-  outer struct's `color` does not reach into it.
+  outer struct's `color` does not reach into it. An `Option` of such a
+  struct, as a field (`dark: Option<Palette>`) or a parameter, is the same
+  group with a switch in its head: off is `None`, and on again brings back
+  the fields as they were left. The struct must also be `Default`, which
+  is where its fields start when the arg starts at `None`; without it the
+  arg does not compile ("the trait bound `Palette: std::default::Default` is not satisfied"), and an `Option` of anything else has no control ("`Option<u32>` has no control"). Write a
+  `Default` whose values are worth starting from, since a derived one gives
+  empty text. The switch is the arg's `switch()`, an
+  `RwSignal<bool>` (`None` for an arg that has none), and a reset puts it
+  back with the fields.
   A field of any other type is a compile error at the field ("a field of
   type `u32` has no control"), and so is `color` on a field that is not a
   `&'static str`. An edited `&'static str` is leaked once per distinct

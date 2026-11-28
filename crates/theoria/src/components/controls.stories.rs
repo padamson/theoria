@@ -113,6 +113,8 @@ struct Card {
     radius: Bounded,
     /// The line around the card.
     border: Border,
+    /// The card's shadow, or none.
+    shadow: Option<Shadow>,
 }
 
 /// A line's look, as a struct that is a field of `Card`.
@@ -125,11 +127,33 @@ struct Border {
     width: Bounded,
 }
 
+/// A shadow under the card, as a struct an `Option` holds.
+#[derive(Clone, StoryArg)]
+struct Shadow {
+    /// The shadow's color, any CSS color.
+    #[story_arg(color)]
+    color: &'static str,
+    /// How far it blurs, in `px`.
+    blur: Bounded,
+}
+
+/// Where the shadow's fields start when it is switched on from none.
+impl Default for Shadow {
+    fn default() -> Self {
+        Self {
+            color: "rgb(0 0 0 / 0.25)",
+            blur: Bounded::new(6.0).min(0.0).max(24.0).step(1.0),
+        }
+    }
+}
+
 /// A **struct** arg: `Card` derives `StoryArg`, so each of its fields gets
 /// the control its type picks, under the arg's name, with the field's doc
 /// comment beside it. A `&'static str` field is a text box, or a color with
 /// `#[story_arg(color)]`. A field whose type derives `StoryArg` too, such as
-/// `border`, is a group of its own fields under its name.
+/// `border`, is a group of its own fields under its name. An `Option` of one,
+/// such as `shadow`, has a switch: off is `None`, and on again brings back the
+/// fields as they were left.
 #[story(
     name = "Knobs · struct",
     card = Card {
@@ -139,6 +163,7 @@ struct Border {
         bold: true,
         radius: Bounded::new(0.5).min(0.0).max(2.0).step(0.125),
         border: Border { color: "#c9bfa8", width: Bounded::new(1.0).min(0.0).max(8.0).step(1.0) },
+        shadow: Some(Shadow::default()),
     },
 )]
 fn knobs_struct(card: Signal<Card>) -> impl IntoView {
@@ -151,6 +176,12 @@ fn knobs_struct(card: Signal<Card>) -> impl IntoView {
             style:border=move || {
                 let border = card.get().border;
                 format!("{}px solid {}", border.width.value(), border.color)
+            }
+            style:box-shadow=move || {
+                card.get().shadow.map_or_else(
+                    || "none".to_string(),
+                    |shadow| format!("0 2px {}px {}", shadow.blur.value(), shadow.color),
+                )
             }
         >
             <p

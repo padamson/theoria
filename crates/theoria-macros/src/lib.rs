@@ -452,6 +452,9 @@ fn story_arg_impl(input: &DeriveInput) -> syn::Result<TokenStream2> {
         impl theoria::__private::Sealed for #ident {}
 
         #[automatically_derived]
+        impl theoria::__private::Struct for #ident {}
+
+        #[automatically_derived]
         impl theoria::StoryArg for #ident {
             type Value = Self;
             type Init = Self;

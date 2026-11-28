@@ -37,7 +37,10 @@ gates, and `skills/theoria-usage/` is what a consumer reads.
   implements `Plain` for a struct as an `Arg::group` of one arg per
   field, each through `__private::Field` (every `Plain`, so a field whose type
   derives `StoryArg` is a nested group, and `&'static str`)
-  or `ColorField`. Those traits are public under the `#[doc(hidden)]`
+  or `ColorField`. The derive also implements the marker `__private::Struct`,
+  so `Option<T>` of a derived `T` that is `Default` is `Plain`: the struct's
+  group made `Arg::switched`, whose `Arg::switch` the panel draws as a
+  checkbox in the arg's head, drawing the fields only while it is on. Those traits are public under the `#[doc(hidden)]`
   `__private` only so the derive can name them from another crate.
 - `crates/theoria-cli`: the `theoria` binary, whose `main` only calls the
   library's `theoria_cli::run(args)`, so a consumer can build the CLI as a

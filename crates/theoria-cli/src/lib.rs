@@ -324,6 +324,7 @@ const GALLERY_INDEX_HTML: &str = r#"<!DOCTYPE html>
       .theoria-controls .control-row:first-child { border-top: none; }
       .theoria-controls .control-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 10px; margin-bottom: 4px; }
       .theoria-controls .control-name { min-width: 0; color: #2c2a25; font-weight: 600; overflow-wrap: anywhere; }
+      .theoria-controls .control-switch { display: inline-flex; align-items: baseline; gap: 6px; cursor: pointer; }
       .theoria-controls .control-type { min-width: 0; color: #5c6b4f; font-size: 12px; text-align: right; overflow-wrap: anywhere; }
       .theoria-controls .control-input input, .theoria-controls .control-input select { width: 100%; box-sizing: border-box; padding: 3px 6px; border: 1px solid #d8d0be; border-radius: 6px; font: inherit; }
       .theoria-controls .control-input input[type=checkbox] { width: auto; }

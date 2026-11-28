@@ -1255,21 +1255,110 @@ async fn a_field_typed_into_under_its_structs_name_reaches_the_story() -> Result
     .await
 }
 
+/// The group of the `Knobs · struct` story's `card` arg called `name`.
+fn card_group(page: &Page, name: &str) -> Locator {
+    page.locator(format!(
+        r#".theoria-panel [role=group][aria-label="card"] [role=group][aria-label="{name}"]"#
+    ))
+}
+
+/// The input in `within` whose role is `role` and whose name is `name`.
+fn by_role(within: &Locator, role: AriaRole, name: &str) -> Locator {
+    within.get_by_role(
+        role,
+        Some(GetByRoleOptions::default().name(name).exact(true)),
+    )
+}
+
+/// The switch in the card's `shadow` group, which an `Option` gives one.
+fn shadow_switch(page: &Page) -> Locator {
+    by_role(&card_group(page, "shadow"), AriaRole::Checkbox, "shadow")
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn switching_a_group_off_takes_it_from_the_story() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · struct").await?;
+        let card = page.locator(".theoria-stage .k-card");
+        expect(card.clone())
+            .to_have_css("box-shadow", "rgba(0, 0, 0, 0.25) 0px 2px 6px 0px")
+            .await
+            .context("the stage starts with the shadow")?;
+        shadow_switch(page)
+            .uncheck(None)
+            .await
+            .context("switch the card's shadow off")?;
+        expect(card)
+            .to_have_css("box-shadow", "none")
+            .await
+            .context("the stage draws no shadow")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn switching_a_group_off_takes_its_fields_from_the_panel() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · struct").await?;
+        shadow_switch(page)
+            .uncheck(None)
+            .await
+            .context("switch the card's shadow off")?;
+        expect(by_role(
+            &card_group(page, "shadow"),
+            AriaRole::Spinbutton,
+            "blur",
+        ))
+        .to_have_count(0)
+        .await
+        .context("the shadow's blur box is gone")?;
+
+        Ok(())
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn switching_a_group_on_again_shows_its_fields_as_they_were_left() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        select(page, "Knobs · struct").await?;
+        let blur = || by_role(&card_group(page, "shadow"), AriaRole::Spinbutton, "blur");
+        blur()
+            .fill("9", None)
+            .await
+            .context("type a blur into the shadow")?;
+        shadow_switch(page)
+            .uncheck(None)
+            .await
+            .context("switch the shadow off")?;
+        shadow_switch(page)
+            .check(None)
+            .await
+            .context("switch the shadow on again")?;
+        expect(blur())
+            .to_have_value("9")
+            .await
+            .context("the blur box shows what was typed")?;
+
+        Ok(())
+    })
+    .await
+}
+
 #[tokio::test]
 #[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
 async fn a_field_typed_into_inside_a_nested_group_reaches_the_story() -> Result<()> {
     with_gallery(async |page: &Page| {
         select(page, "Knobs · struct").await?;
-        page.locator(
-            r#".theoria-panel [role=group][aria-label="card"] [role=group][aria-label="border"]"#,
-        )
-        .get_by_role(
-            AriaRole::Spinbutton,
-            Some(GetByRoleOptions::default().name("width").exact(true)),
-        )
-        .fill("4", None)
-        .await
-        .context("type a width into the card's border group")?;
+        by_role(&card_group(page, "border"), AriaRole::Spinbutton, "width")
+            .fill("4", None)
+            .await
+            .context("type a width into the card's border group")?;
         expect(page.locator(".theoria-stage .k-card"))
             .to_have_css("border-top-width", "4px")
             .await

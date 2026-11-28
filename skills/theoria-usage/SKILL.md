@@ -3,7 +3,7 @@ name: theoria-usage
 description: Use when designing or building a Leptos component in a crate that has theoria stories, or when writing or reviewing theoria stories for Leptos components (`theoria::Story`, the `#[story]` attribute, a crate's `stories` feature and aggregator function), when setting up or debugging a `theoria.toml` and the `theoria serve` or `theoria build` gallery, or when deciding whether a check belongs in a story, a leptotes test, or a playwright-rust end-to-end test.
 license: MIT OR Apache-2.0
 metadata:
-  version: "0.1.17"
+  version: "0.1.18"
   internal: true
 ---
 
@@ -24,7 +24,7 @@ changed live, before or instead of wiring it into the app.
 A crate writes stories: `Story::new(name, || view! { ... })`, or a
 function under `#[story(...)]` whose typed parameters (`bool`, `f64`,
 `String`, `Bounded`, `Color`, `Choice<T>`, a struct that derives
-`StoryArg`, or a `Signal` of one) become
+`StoryArg`, an `Option` of one, or a `Signal` of one) become
 controls and whose doc comment becomes the description. It collects them in a
 function returning `theoria::Stories`, behind a `stories` feature. `theoria.toml`
 names that crate and function, and the `theoria` CLI generates a Trunk

@@ -35,17 +35,27 @@ settle on can be pasted into the site.
   - [x] each field's doc comment is shown with its control
   - [x] a field whose type has no control is a compile error at the field,
         unless it is `#[story_arg(skip)]`, which keeps its default
-- **T18.3 — groups**
+- **T18.3 — groups** ✅
   - [x] a field whose type derives `StoryArg` is a group of controls under
         the field's name
-  - [ ] an `Option` of one is a group with a switch: off is `None`, and on
+  - [x] an `Option` of one is a group with a switch: off is `None`, and on
         again brings back the fields as they were left
+  - [x] the struct an `Option` holds is `Default`, which the fields start
+        at when the arg starts at `None`; without it the arg does not
+        compile
 - **T18.4 — the value as code**
   - [ ] the panel shows a struct arg's value as `{:#?}` writes it, with a
         button that copies it
 
 ## Notes / refs
 
+- Ruled 2026-11-27: an `Option` of a struct needs the struct to be
+  `Default`, where its fields start when the arg starts at `None` (a site
+  whose theme has no dark palette, turning one on to design it). What
+  those values are is the struct's crate's to say: theoria knows no theme,
+  and a dark palette worked out from a light one is by role, which only
+  the crate that owns the roles knows. A seed attribute on the field was
+  the alternative; a story parameter cannot carry one.
 - Ruled 2026-11-26: the struct derives `StoryArg`, and its fields' types
   pick their controls, with `#[story_arg(...)]` for what a type cannot say
   (a `&'static str` that is a color). This follows serde and clap, and

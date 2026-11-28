@@ -249,20 +249,35 @@ pub fn Controls(args: Vec<Arg>) -> impl IntoView {
 }
 
 fn row(arg: Arg) -> AnyView {
-    let (name, ty) = (arg.name(), arg.ty());
-    let control = arg.control();
+    let (name, ty, control, switch) = (arg.name(), arg.ty(), arg.control(), arg.switch());
     let group = matches!(control, ArgControl::Group(_));
-    let body = match control {
+    let body = move || match control {
         ArgControl::Group(group) => {
             let rows = group.args().into_iter().map(row).collect::<Vec<_>>();
             view! { <div class="control-fields">{rows}</div> }.into_any()
         }
         control => view! { <div class="control-input">{widget(name, control)}</div> }.into_any(),
     };
+    let (head, body) = match switch {
+        Some(on) => (
+            view! {
+                <label class="control-name control-switch">
+                    {widget(name, ArgControl::Bool(on))}
+                    {name}
+                </label>
+            }
+            .into_any(),
+            (move || on.get().then(body)).into_any(),
+        ),
+        None => (
+            view! { <span class="control-name">{name}</span> }.into_any(),
+            body(),
+        ),
+    };
     view! {
         <div class="control-row" role=group.then_some("group") aria-label=group.then_some(name)>
             <div class="control-head">
-                <span class="control-name">{name}</span>
+                {head}
                 <code class="control-type">{ty}</code>
             </div>
             {arg.description().map(|text| view! {
@@ -281,6 +296,7 @@ fn widget(name: &'static str, control: ArgControl) -> AnyView {
             <input
                 type="checkbox"
                 aria-label=name
+                checked=s.get_untracked()
                 prop:checked=move || s.get()
                 on:change=move |ev| s.set(event_target_checked(&ev))
             />

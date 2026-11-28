@@ -424,6 +424,58 @@ fn a_group_inside_a_group_is_drawn_inside_it_under_its_name() {
     );
 }
 
+/// A `glow` group of one number, switched `on` or off.
+fn switched_group(on: bool) -> Dom {
+    leptotes::dom(move || {
+        let glow = Arg::group(
+            "glow",
+            "Option<Glow>",
+            vec![Arg::new("depth", "f64", RwSignal::new(2.0))],
+        )
+        .switched(RwSignal::new(on));
+        view! { <Controls args=vec![glow] /> }
+    })
+}
+
+/// The checkbox in a group's head.
+const SWITCH: &str = "[role=group] > .control-head input[type=checkbox]";
+
+#[test]
+fn a_switched_groups_head_has_a_checkbox_named_for_it() {
+    let dom = switched_group(true);
+    assert_eq!(dom.find(SWITCH).attr("aria-label"), Some("glow"), "{dom}");
+}
+
+#[test]
+fn a_switched_on_groups_checkbox_is_checked() {
+    let dom = switched_group(true);
+    assert!(dom.find(SWITCH).attr("checked").is_some(), "{dom}");
+}
+
+#[test]
+fn a_switched_off_groups_checkbox_is_not_checked() {
+    let dom = switched_group(false);
+    assert_eq!(dom.find(SWITCH).attr("checked"), None, "{dom}");
+}
+
+#[test]
+fn a_switched_on_group_draws_its_fields() {
+    let dom = switched_group(true);
+    assert_eq!(dom.count("[role=group] .control-fields input"), 1, "{dom}");
+}
+
+#[test]
+fn a_switched_off_group_draws_none_of_its_fields() {
+    let dom = switched_group(false);
+    assert_eq!(dom.count("[role=group] .control-fields"), 0, "{dom}");
+}
+
+#[test]
+fn a_group_without_a_switch_has_no_checkbox_in_its_head() {
+    let dom = group_control();
+    assert_eq!(dom.count(".control-head input"), 0, "{dom}");
+}
+
 #[test]
 fn a_group_shows_its_type() {
     let dom = group_control();

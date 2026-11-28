@@ -404,6 +404,7 @@ pub struct Arg {
     /// `None` for a group, whose args each have their own.
     resets: Option<Trigger>,
     description: Option<&'static str>,
+    switch: Option<RwSignal<bool>>,
 }
 
 impl Arg {
@@ -445,6 +446,7 @@ impl Arg {
             reset,
             resets: Some(resets),
             description: None,
+            switch: None,
         }
     }
 
@@ -490,7 +492,21 @@ impl Arg {
             reset,
             resets: None,
             description: None,
+            switch: None,
         }
+    }
+
+    /// The arg, with `on` as its switch, whose value now is the one a
+    /// reset puts back.
+    pub(crate) fn switched(mut self, on: RwSignal<bool>) -> Self {
+        let switch = Arg::new(self.name, "bool", on);
+        let rest = self.reset;
+        self.switch = Some(on);
+        self.reset = Callback::new(move |()| {
+            switch.reset();
+            rest.run(());
+        });
+        self
     }
 
     /// Give the arg a Markdown description, shown with its control.
@@ -518,6 +534,13 @@ impl Arg {
     #[must_use]
     pub fn control(&self) -> ArgControl {
         self.control
+    }
+
+    /// Whether the arg is on, for one that can be switched off: an `Option`
+    /// of a struct, which is `None` while it is off.
+    #[must_use]
+    pub fn switch(&self) -> Option<RwSignal<bool>> {
+        self.switch
     }
 
     /// The Markdown description, if any: a field's doc comment, for an arg
@@ -566,7 +589,7 @@ pub mod __private {
     #[diagnostic::on_unimplemented(
         message = "`Signal<{Self}>` cannot be a #[story] arg",
         label = "no control for a signal of this type",
-        note = "a Signal arg holds a bool, f64, String, Bounded, Color, or Choice, or a struct that derives StoryArg"
+        note = "a Signal arg holds a bool, f64, String, Bounded, Color, or Choice, a struct that derives StoryArg, or an `Option` of one that is also `Default`"
     )]
     pub trait Plain: super::StoryArg<Value = Self> + Clone + Send + Sync + 'static {
         /// The arg's value, read from its controls, and the arg.
@@ -591,7 +614,7 @@ pub mod __private {
     #[diagnostic::on_unimplemented(
         message = "a field of type `{Self}` has no control",
         label = "no control for this field's type",
-        note = "a StoryArg field is a bool, f64, String, &'static str, Bounded, Color, or Choice, or a struct that derives StoryArg; `#[story_arg(skip)]` keeps its value"
+        note = "a StoryArg field is a bool, f64, String, &'static str, Bounded, Color, or Choice, a struct that derives StoryArg, or an `Option` of one that is also `Default`; `#[story_arg(skip)]` keeps its value"
     )]
     pub trait Field: Sized + Send + Sync + 'static {
         fn field(name: &'static str, ty: &'static str, start: Self) -> (Signal<Self>, Arg);
@@ -646,6 +669,14 @@ pub mod __private {
         (Signal::derive(value), Arg::group(name, ty, args))
     }
 
+    /// A struct that derives `StoryArg`, which an `Option` can hold.
+    #[diagnostic::on_unimplemented(
+        message = "`Option<{Self}>` has no control",
+        label = "not a struct that derives StoryArg",
+        note = "an `Option` arg or field holds a struct that derives StoryArg and Default"
+    )]
+    pub trait Struct {}
+
     pub fn read<T: Clone + Send + Sync + 'static>(signal: Signal<T>) -> T {
         signal.get()
     }
@@ -665,8 +696,8 @@ pub mod __private {
 }
 
 /// A type a `#[story]` parameter can have: `bool`, `f64`, `String`,
-/// [`Bounded`], [`Color`], [`Choice`], a struct that derives `StoryArg`, or
-/// a `Signal` of one, which hands the body the arg's signal, not its value.
+/// [`Bounded`], [`Color`], [`Choice`], a struct that derives `StoryArg`, an
+/// `Option` of such a struct, or a `Signal` of one, which hands the body the arg's signal, not its value.
 ///
 /// ```
 /// use leptos::prelude::*;
@@ -697,7 +728,55 @@ pub mod __private {
 /// on the struct makes every field written `&'static str` one. An edited
 /// `&'static str` is leaked once per distinct text. A field whose type
 /// derives `StoryArg` too is a group of its own fields, under the field's
-/// name.
+/// name. An `Option` of such a struct, as a field or a parameter, is the
+/// same group with a switch: off is `None`, and on again brings back the
+/// fields as they were left. The struct must be `Default` too, which is
+/// where the fields start when the arg starts at `None`.
+///
+/// ```
+/// use leptos::prelude::*;
+/// use theoria::{StoryArg, story};
+///
+/// #[derive(Clone, Default, StoryArg)]
+/// #[story_arg(color)]
+/// struct Palette {
+///     paper: &'static str,
+///     ink: &'static str,
+/// }
+///
+/// #[story(dark = Some(Palette { paper: "#0d1117", ink: "#e6edf3" }))]
+/// fn page(dark: Signal<Option<Palette>>) -> impl IntoView {
+///     view! { <main style:background=move || dark.get().map(|dark| dark.paper)>"Hello"</main> }
+/// }
+/// ```
+///
+/// An `Option` of anything but such a struct has no control:
+///
+/// ```compile_fail,E0277
+/// use theoria::StoryArg;
+///
+/// #[derive(Clone, StoryArg)]
+/// struct Card {
+///     width: Option<f64>,
+/// }
+/// ```
+///
+/// and an `Option` of a struct that is not `Default` does not compile:
+///
+/// ```compile_fail,E0277
+/// use leptos::prelude::*;
+/// use theoria::{StoryArg, story};
+///
+/// #[derive(Clone, StoryArg)]
+/// struct Palette {
+///     paper: String,
+/// }
+///
+/// #[story]
+/// fn page(dark: Option<Palette>) -> impl IntoView {
+///     view! { <main>"Hello"</main> }
+/// }
+/// ```
 ///
 /// ```
 /// use leptos::prelude::*;
@@ -752,7 +831,7 @@ pub mod __private {
 #[diagnostic::on_unimplemented(
     message = "`{Self}` cannot be a #[story] arg",
     label = "no control for this type",
-    note = "a #[story] arg is a bool, f64, String, Bounded, Color, or Choice, a struct that derives StoryArg, or a `Signal` of one (not an `RwSignal`)"
+    note = "a #[story] arg is a bool, f64, String, Bounded, Color, or Choice, a struct that derives StoryArg, an `Option` of one that is also `Default`, or a `Signal` of one (not an `RwSignal`)"
 )]
 pub trait StoryArg: Sized + __private::Sealed {
     /// What the arg's control edits.
@@ -838,6 +917,28 @@ impl<T: Clone + Send + Sync + 'static> __private::Plain for Choice<T> {
 }
 
 impl<T: Clone + Send + Sync + 'static> StoryArg for Choice<T> {
+    type Value = Self;
+    type Init = Self;
+
+    fn bind(signal: Signal<Self>) -> Self {
+        signal.get()
+    }
+}
+
+impl<T: __private::Struct + __private::Plain + Default> __private::Sealed for Option<T> {}
+
+impl<T: __private::Struct + __private::Plain + Default> __private::Plain for Option<T> {
+    fn arg(name: &'static str, ty: &'static str, start: Self) -> (Signal<Self>, Arg) {
+        let on = RwSignal::new(start.is_some());
+        let (fields, group) = T::arg(name, ty, start.unwrap_or_default());
+        (
+            Signal::derive(move || on.get().then(|| fields.get())),
+            group.switched(on),
+        )
+    }
+}
+
+impl<T: __private::Struct + __private::Plain + Default> StoryArg for Option<T> {
     type Value = Self;
     type Init = Self;
 
@@ -1700,6 +1801,51 @@ mod arg_tests {
     }
 
     #[test]
+    fn a_reset_of_a_switch_left_as_it_started_writes_nothing() {
+        Owner::new().with(|| {
+            let on = RwSignal::new(true);
+            let arg = Arg::group(
+                "glow",
+                "Option<Glow>",
+                vec![Arg::new("depth", "f64", RwSignal::new(2.0))],
+            )
+            .switched(on);
+            let runs = StoredValue::new(0);
+            let reader = Memo::new(move |_| {
+                on.track();
+                runs.update_value(|n| *n += 1);
+            });
+            reader.get();
+            arg.reset();
+            reader.get();
+            assert_eq!(runs.get_value(), 1);
+        });
+    }
+
+    #[test]
+    fn a_reset_of_a_switch_turned_off_redraws_what_reads_it() {
+        Owner::new().with(|| {
+            let on = RwSignal::new(true);
+            let arg = Arg::group(
+                "glow",
+                "Option<Glow>",
+                vec![Arg::new("depth", "f64", RwSignal::new(2.0))],
+            )
+            .switched(on);
+            on.set(false);
+            let runs = StoredValue::new(0);
+            let reader = Memo::new(move |_| {
+                on.track();
+                runs.update_value(|n| *n += 1);
+            });
+            reader.get();
+            arg.reset();
+            reader.get();
+            assert_eq!(runs.get_value(), 2);
+        });
+    }
+
+    #[test]
     fn a_reset_of_an_unedited_choice_writes_nothing() {
         Owner::new().with(|| {
             let build = RwSignal::new(Choice::new(["dev", "0.13.0"]));
@@ -2306,6 +2452,17 @@ mod derive_tests {
         depth: f64,
     }
 
+    /// Not `Shade`'s values in any story, so a test can tell where the
+    /// fields started.
+    impl Default for Shade {
+        fn default() -> Self {
+            Self {
+                ink: "#111111",
+                depth: 1.0,
+            }
+        }
+    }
+
     #[derive(Clone, StoryArg)]
     struct Layered {
         label: String,
@@ -2337,11 +2494,16 @@ mod derive_tests {
         group(field_of(group_of(story, "layered"), "shade"))
     }
 
-    fn depth(story: &Story) -> RwSignal<f64> {
-        let ArgControl::Num(depth) = field_of(shade(story), "depth").control() else {
+    /// The `depth` field of `group`.
+    fn depth_of(group: GroupControl) -> RwSignal<f64> {
+        let ArgControl::Num(depth) = field_of(group, "depth").control() else {
             panic!("`depth` did not get the number control");
         };
         depth
+    }
+
+    fn depth(story: &Story) -> RwSignal<f64> {
+        depth_of(shade(story))
     }
 
     #[test]
@@ -2419,6 +2581,178 @@ mod derive_tests {
                 field_of(group_of(&layered(), "layered"), "shade").description(),
                 Some("The heading's look.")
             );
+        });
+    }
+
+    #[derive(Clone, StoryArg)]
+    struct Lit {
+        label: String,
+        glow: Option<Shade>,
+    }
+
+    fn lit(glow: Option<Shade>) -> Lit {
+        Lit {
+            label: "Patio".to_string(),
+            glow,
+        }
+    }
+
+    fn lit_view(lit: Signal<Lit>) -> impl IntoView {
+        view! { <p data-depth=move || lit.get().glow.map(|glow| glow.depth)>{move || lit.get().label}</p> }
+    }
+
+    #[story(lit = lit(Some(Shade { ink: "#243832", depth: 2.0 })))]
+    fn lit_on(lit: Signal<Lit>) -> impl IntoView {
+        lit_view(lit)
+    }
+
+    #[story(lit = lit(None))]
+    fn lit_off(lit: Signal<Lit>) -> impl IntoView {
+        lit_view(lit)
+    }
+
+    /// The `glow` field of the `lit` arg, as a group.
+    fn glow(story: &Story) -> GroupControl {
+        group(field_of(group_of(story, "lit"), "glow"))
+    }
+
+    fn switch(story: &Story) -> RwSignal<bool> {
+        field_of(group_of(story, "lit"), "glow")
+            .switch()
+            .expect("`glow` has no switch")
+    }
+
+    fn glow_depth(story: &Story) -> RwSignal<f64> {
+        depth_of(glow(story))
+    }
+
+    #[test]
+    fn an_option_of_a_struct_is_a_group_of_the_structs_fields() {
+        Owner::new().with(|| {
+            let names: Vec<_> = glow(&lit_on()).args().iter().map(Arg::name).collect();
+            assert_eq!(names, ["ink", "depth"]);
+        });
+    }
+
+    #[test]
+    fn a_some_start_switches_the_group_on() {
+        Owner::new().with(|| assert!(switch(&lit_on()).get_untracked()));
+    }
+
+    #[test]
+    fn a_none_start_switches_the_group_off() {
+        Owner::new().with(|| assert!(!switch(&lit_off()).get_untracked()));
+    }
+
+    #[test]
+    fn a_some_start_gives_the_story_its_value() {
+        let dom = leptotes::dom(|| lit_on().view());
+        assert_eq!(dom.find("p").attr("data-depth"), Some("2"), "{dom}");
+    }
+
+    #[test]
+    fn switching_the_group_off_gives_the_story_none() {
+        let dom = leptotes::dom(|| {
+            let story = lit_on();
+            switch(&story).set(false);
+            story.view()
+        });
+        assert_eq!(dom.find("p").attr("data-depth"), None, "{dom}");
+    }
+
+    #[test]
+    fn switching_on_again_brings_back_the_fields_as_they_were_left() {
+        let dom = leptotes::dom(|| {
+            let story = lit_on();
+            glow_depth(&story).set(3.5);
+            switch(&story).set(false);
+            switch(&story).set(true);
+            story.view()
+        });
+        assert_eq!(dom.find("p").attr("data-depth"), Some("3.5"), "{dom}");
+    }
+
+    #[test]
+    fn switching_on_from_none_starts_the_fields_at_the_types_default() {
+        let dom = leptotes::dom(|| {
+            let story = lit_off();
+            switch(&story).set(true);
+            story.view()
+        });
+        assert_eq!(dom.find("p").attr("data-depth"), Some("1"), "{dom}");
+    }
+
+    #[test]
+    fn a_reset_puts_the_switch_back() {
+        Owner::new().with(|| {
+            let story = lit_on();
+            switch(&story).set(false);
+            story.arg("lit").unwrap().reset();
+            assert!(switch(&story).get_untracked());
+        });
+    }
+
+    #[test]
+    fn a_reset_puts_an_option_groups_fields_back() {
+        Owner::new().with(|| {
+            let story = lit_on();
+            glow_depth(&story).set(3.5);
+            story.arg("lit").unwrap().reset();
+            assert_eq!(glow_depth(&story).get_untracked(), 2.0);
+        });
+    }
+
+    #[test]
+    fn a_reset_of_an_arg_that_started_at_none_switches_it_off() {
+        Owner::new().with(|| {
+            let story = lit_off();
+            switch(&story).set(true);
+            story.arg("lit").unwrap().reset();
+            assert!(!switch(&story).get_untracked());
+        });
+    }
+
+    #[test]
+    fn a_reset_of_an_arg_that_started_at_none_puts_the_fields_at_the_types_default() {
+        Owner::new().with(|| {
+            let story = lit_off();
+            switch(&story).set(true);
+            glow_depth(&story).set(3.5);
+            story.arg("lit").unwrap().reset();
+            assert_eq!(glow_depth(&story).get_untracked(), 1.0);
+        });
+    }
+
+    #[test]
+    fn a_group_that_is_not_an_option_has_no_switch() {
+        Owner::new().with(|| assert!(card().arg("card").unwrap().switch().is_none()));
+    }
+
+    fn glow_view(glow: Option<Shade>) -> impl IntoView {
+        view! { <p data-depth=glow.map(|glow| glow.depth)>"Patio"</p> }
+    }
+
+    #[story]
+    fn glowing(glow: Option<Shade>) -> impl IntoView {
+        glow_view(glow)
+    }
+
+    #[story(glow = Some(Shade { ink: "#243832", depth: 2.0 }))]
+    fn glowing_from_the_start(glow: Option<Shade>) -> impl IntoView {
+        glow_view(glow)
+    }
+
+    #[test]
+    fn an_option_parameter_gives_the_story_its_value() {
+        let dom = leptotes::dom(|| glowing_from_the_start().view());
+        assert_eq!(dom.find("p").attr("data-depth"), Some("2"), "{dom}");
+    }
+
+    #[test]
+    fn an_option_parameter_with_no_default_starts_switched_off() {
+        Owner::new().with(|| {
+            let on = glowing().arg("glow").unwrap().switch().expect("a switch");
+            assert!(!on.get_untracked());
         });
     }
 }

@@ -115,10 +115,10 @@ proc-macro). Prioritize the *value*, accept explicit authoring.
   enum→select, color→picker) fed through Leptos signals; no auto-inference.
   Open question: typed per-component arg struct (type-safe, needs a derive) vs.
   dynamic `Vec<(name, ArgValue)>` (easy to render, loses type safety).
-  ✅ **Done** (T6, T17, T18.2): the parameter's type picks the control,
-  through the `StoryArg` trait (`bool`, `f64`, `String`, `Bounded`,
-  `Color`, `Choice<T>`, a struct that derives `StoryArg`, or a `Signal` of
-  one). The open question went to the derive, for a struct a component
+  ✅ **Done** (T6, T17, T18.2, T18.3): the parameter's type picks the
+  control, through the `StoryArg` trait (`bool`, `f64`, `String`,
+  `Bounded`, `Color`, `Choice<T>`, a struct that derives `StoryArg`, an
+  `Option` of one, or a `Signal` of one). The open question went to the derive, for a struct a component
   already has.
 - **Actions** — log a component's callbacks + their args to a panel ("did my
   `on:click`/`Callback` fire with the right payload?"). Pairs with args (a
