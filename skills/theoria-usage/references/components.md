@@ -21,15 +21,27 @@ test. Stories are not tests. They are for a person looking at the component.
 5. Hand the gallery to a person. A session can run `theoria serve` but
    cannot see the result, so this step ends by naming the stories to open
    and what a pass looks like in each.
-6. Test what only a browser decides (the cascade, a fetch, a navigation)
-   with playwright-rust against a real page. Leave the stories out of
-   that job.
+6. Test what only a browser decides (the cascade, a fetch, a navigation,
+   a control reaching the stage) with playwright-rust against a real
+   page. Two kinds of test may use the gallery's stories, each opening a
+   story by its URL:
+   - One sweep over every story. It finds the stories in the gallery's
+     sidebar at run time, so a new story is covered without touching the
+     test, and checks that each opens and renders. A per-story
+     accessibility check or screenshot comparison goes in the same loop.
+   - A targeted test on a story, when the state it checks is one a person
+     would look at in that story (a playground's control changing what
+     the stage shows, say).
+
+   A case no visitor would look at (a layer-order case, a stubbed fetch)
+   goes on a static page the test serves.
 
 ## Mistakes these steps catch
 
-- **Stories used as test fixtures.** A story that exists only for a browser
+- **A story written for a test.** A story that exists only for a browser
   test to drive (a layer-order case, a stubbed fetch) shows a person
-  nothing. Put that case on a static page the test serves.
+  nothing. Put that case on a static page the test serves. A test that
+  opens a story a person would look at is fine (step 6).
 - **A story that navigates away.** A link or a menu inside a story opens
   an address the gallery does not serve. Stub the navigation in every
   interactive story. A story of a composed page inherits the problem from

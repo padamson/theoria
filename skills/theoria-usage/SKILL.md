@@ -1,9 +1,9 @@
 ---
 name: theoria-usage
-description: Use when designing or building a Leptos component in a crate that has theoria stories, or when writing or reviewing theoria stories for Leptos components (`theoria::Story`, the `#[story]` attribute, a crate's `stories` feature and aggregator function), when setting up or debugging a `theoria.toml` and the `theoria serve` or `theoria build` gallery, or when deciding whether a check belongs in a story, a leptotes test, or a playwright-rust end-to-end test.
+description: Use when designing or building a Leptos component in a crate that has theoria stories, or when writing or reviewing theoria stories for Leptos components (`theoria::Story`, the `#[story]` attribute, a crate's `stories` feature and aggregator function), when setting up or debugging a `theoria.toml` and the `theoria serve` or `theoria build` gallery, or when deciding whether a check belongs in a story, a leptotes test, or a playwright-rust browser test.
 license: MIT OR Apache-2.0
 metadata:
-  version: "0.1.18"
+  version: "0.1.19"
   internal: true
 ---
 
@@ -34,8 +34,12 @@ Leptos) wherever it comes from.
 
 A story is for looking. A claim about the rendered HTML belongs in a
 leptotes test, and a claim about behavior in the browser (clicks,
-persistence, layout) in a playwright-rust test against a built gallery,
-which opens each story by its URL (`?story=<full name>`).
+persistence, layout) in a playwright-rust test against a built gallery.
+Such a test opens a story by its URL (`?story=<full name>`) in two cases:
+a sweep that finds every story in the sidebar and checks each one renders
+(theoria's own `crates/theoria-e2e/tests/gallery.rs`), and a check of a
+state a person would look at in that story. A story written only for a
+test to drive does not belong in the gallery.
 
 - [`references/usage.md`](references/usage.md): the API and CLI surface.
 - [`references/components.md`](references/components.md): the steps for
