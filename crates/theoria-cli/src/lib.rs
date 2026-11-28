@@ -308,10 +308,17 @@ const GALLERY_INDEX_HTML: &str = r#"<!DOCTYPE html>
       .theoria-group-label { padding: 8px 8px 2px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: #8a8275; cursor: pointer; user-select: none; }
       .theoria-group-label:hover { color: #5c6b4f; }
       .theoria-group-label .caret { font-size: 9px; color: #b3ab9a; }
-      .theoria-stage { flex: 1 1 auto; background: #fff; border: 1px solid #e3dccb; border-radius: 12px; padding: 16px; min-height: 200px; overflow: auto; height: 100%; box-sizing: border-box; }
+      /* A basis of 0, not auto, so the story's own width plays no part in
+         how wide the panel is drawn. */
+      .theoria-stage { flex: 1 1 0; background: #fff; border: 1px solid #e3dccb; border-radius: 12px; padding: 16px; min-height: 200px; overflow: auto; height: 100%; box-sizing: border-box; }
       .theoria-missing { margin: 0; color: #8a8275; }
       /* Right-hand panel: Markdown description, controls, and show-code. */
-      .theoria-panel { flex: 0 0 280px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; height: 100%; box-sizing: border-box; }
+      /* The divider fills the 16px between stage and panel: 8px wide, and
+         pulled 12px into each of the gaps either side of it. */
+      .theoria-divider { flex: 0 0 8px; margin: 0 -12px; border-radius: 4px; cursor: col-resize; touch-action: none; }
+      .theoria-divider:hover { background: #e3dccb; }
+      .theoria-divider:focus-visible { background: #e3dccb; outline: 2px solid #5c6b4f; outline-offset: -2px; }
+      .theoria-panel { flex: 0 1 auto; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; height: 100%; box-sizing: border-box; }
       /* The panel scrolls; its parts keep their height rather than shrink. */
       .theoria-panel > * { flex: none; }
       .theoria-md { font-size: 13px; line-height: 1.55; color: #4a463d; }

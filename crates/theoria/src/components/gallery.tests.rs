@@ -4,7 +4,10 @@ use leptos::prelude::*;
 use leptotes::Dom;
 
 use super::Gallery;
-use super::gallery::{Opening, gallery_opened_at, opening, story_href, story_in, with_story};
+use super::gallery::{
+    Drag, Opening, Step, clamp, gallery_opened_at, most_beside, opening, starts_a_drag, step_for,
+    stepped, stored_width, story_href, story_in, with_story,
+};
 use super::story_nav_tests::badges;
 use crate::{Arg, Stories, Story};
 
@@ -278,4 +281,275 @@ fn a_gallery_opened_at_no_such_story_marks_no_story_current() {
 fn a_gallery_opened_at_no_such_story_shows_no_panel() {
     let dom = opened_at(Opening::NoSuchStory("Gamma".into()));
     assert_eq!(dom.count(".theoria-panel"), 0, "{dom}");
+}
+
+#[test]
+fn the_panel_can_take_all_of_the_stage_but_200px() {
+    assert_eq!(most_beside(280, 714), 794);
+}
+
+#[test]
+fn a_stage_already_under_200px_leaves_the_panel_its_least() {
+    assert_eq!(most_beside(220, 150), 220);
+}
+
+const MOST: i32 = 794;
+
+#[test]
+fn a_width_within_the_bounds_is_kept() {
+    assert_eq!(clamp(400, MOST), 400);
+}
+
+#[test]
+fn a_width_under_the_least_is_the_least() {
+    assert_eq!(clamp(219, MOST), 220);
+}
+
+#[test]
+fn a_width_over_the_most_is_the_most() {
+    assert_eq!(clamp(795, MOST), 794);
+}
+
+/// A drag by pointer 1 that began at x = 1000 with the panel 300px wide.
+const DRAG: Drag = Drag {
+    pointer: 1,
+    from: 1000,
+    start: 300,
+    most: MOST,
+};
+
+#[test]
+fn dragging_left_widens_the_panel_as_far() {
+    assert_eq!(DRAG.width_at(1, 900), Some(400));
+}
+
+#[test]
+fn dragging_right_narrows_the_panel_as_far() {
+    assert_eq!(DRAG.width_at(1, 1040), Some(260));
+}
+
+#[test]
+fn a_drag_stops_at_the_most() {
+    assert_eq!(DRAG.width_at(1, 0), Some(794));
+}
+
+#[test]
+fn a_drag_stops_at_the_least() {
+    assert_eq!(DRAG.width_at(1, 2000), Some(220));
+}
+
+#[test]
+fn another_pointer_moves_nothing_in_a_drag() {
+    assert_eq!(DRAG.width_at(2, 900), None);
+}
+
+#[test]
+fn the_main_button_of_the_primary_pointer_starts_a_drag() {
+    assert!(starts_a_drag(0, true));
+}
+
+#[test]
+fn another_button_starts_no_drag() {
+    for button in [1, 2] {
+        assert!(!starts_a_drag(button, true), "button {button}");
+    }
+}
+
+#[test]
+fn a_pointer_that_is_not_primary_starts_no_drag() {
+    assert!(!starts_a_drag(0, false));
+}
+
+#[test]
+fn arrow_left_widens_the_panel() {
+    assert_eq!(step_for("ArrowLeft"), Some(Step::Wider));
+}
+
+#[test]
+fn arrow_right_narrows_the_panel() {
+    assert_eq!(step_for("ArrowRight"), Some(Step::Narrower));
+}
+
+#[test]
+fn other_keys_leave_the_divider() {
+    for key in ["ArrowUp", "ArrowDown", "Enter", "l"] {
+        assert_eq!(step_for(key), None, "{key}");
+    }
+}
+
+#[test]
+fn a_wider_step_adds_16px() {
+    assert_eq!(stepped(300, Step::Wider, MOST), 316);
+}
+
+#[test]
+fn a_narrower_step_takes_16px() {
+    assert_eq!(stepped(300, Step::Narrower, MOST), 284);
+}
+
+#[test]
+fn a_wider_step_stops_at_the_most() {
+    assert_eq!(stepped(790, Step::Wider, MOST), 794);
+}
+
+#[test]
+fn a_narrower_step_stops_at_the_least() {
+    assert_eq!(stepped(230, Step::Narrower, MOST), 220);
+}
+
+#[test]
+fn nothing_stored_is_the_default_width() {
+    assert_eq!(stored_width(None), 280);
+}
+
+#[test]
+fn a_stored_width_is_read_back() {
+    assert_eq!(stored_width(Some("350")), 350);
+}
+
+#[test]
+fn a_stored_width_under_the_least_is_the_least() {
+    assert_eq!(stored_width(Some("100")), 220);
+}
+
+#[test]
+fn a_stored_value_that_is_no_width_is_the_default() {
+    for stored in ["", "wide", "350px", "350.5"] {
+        assert_eq!(stored_width(Some(stored)), 280, "{stored:?}");
+    }
+}
+
+/// The value of `property` in an element's `style`, as Leptos writes it
+/// (`name: value;` for each declaration).
+fn style<'a>(dom: &'a Dom, selector: &str, property: &str) -> Option<&'a str> {
+    dom.find(selector)
+        .attr("style")?
+        .split(';')
+        .filter_map(|declaration| declaration.split_once(':'))
+        .find(|(name, _)| name.trim() == property)
+        .map(|(_, value)| value.trim())
+}
+
+#[test]
+fn the_divider_sits_between_the_stage_and_the_panel() {
+    let dom = gallery_of(alpha_beta());
+    assert_eq!(
+        dom.count(".theoria > .theoria-stage + .theoria-divider + .theoria-panel"),
+        1,
+        "{dom}"
+    );
+}
+
+#[test]
+fn the_divider_is_a_separator() {
+    let dom = gallery_of(alpha_beta());
+    assert_eq!(
+        dom.find(".theoria-divider").attr("role"),
+        Some("separator"),
+        "{dom}"
+    );
+}
+
+#[test]
+fn the_divider_takes_the_focus_in_page_order() {
+    let dom = gallery_of(alpha_beta());
+    assert_eq!(
+        dom.find(".theoria-divider").attr("tabindex"),
+        Some("0"),
+        "{dom}"
+    );
+}
+
+#[test]
+fn the_divider_is_named_for_the_panels_width() {
+    let dom = gallery_of(alpha_beta());
+    assert_eq!(
+        dom.find(".theoria-divider").attr("aria-label"),
+        Some("Panel width"),
+        "{dom}"
+    );
+}
+
+#[test]
+fn the_divider_stands_upright() {
+    let dom = gallery_of(alpha_beta());
+    assert_eq!(
+        dom.find(".theoria-divider").attr("aria-orientation"),
+        Some("vertical"),
+        "{dom}"
+    );
+}
+
+#[test]
+fn the_divider_reads_the_panels_default_width() {
+    let dom = gallery_of(alpha_beta());
+    assert_eq!(
+        dom.find(".theoria-divider").attr("aria-valuenow"),
+        Some("280"),
+        "{dom}"
+    );
+}
+
+#[test]
+fn the_divider_reads_the_panels_least() {
+    let dom = gallery_of(alpha_beta());
+    assert_eq!(
+        dom.find(".theoria-divider").attr("aria-valuemin"),
+        Some("220"),
+        "{dom}"
+    );
+}
+
+#[test]
+fn the_divider_reads_a_width_within_its_range_before_it_is_measured() {
+    let dom = gallery_of(alpha_beta());
+    let divider = dom.find(".theoria-divider");
+    let value = |attr| -> i32 {
+        divider
+            .attr(attr)
+            .and_then(|value| value.parse().ok())
+            .unwrap_or_else(|| panic!("{attr} is no number in {dom}"))
+    };
+    let (least, now, most) = (
+        value("aria-valuemin"),
+        value("aria-valuenow"),
+        value("aria-valuemax"),
+    );
+    assert!(least <= now && now <= most, "{least} <= {now} <= {most}");
+}
+
+#[test]
+fn the_panel_starts_at_its_default_width() {
+    let dom = gallery_of(alpha_beta());
+    assert_eq!(
+        style(&dom, ".theoria-panel", "flex-basis"),
+        Some("280px"),
+        "{dom}"
+    );
+}
+
+#[test]
+fn the_panel_shrinks_no_narrower_than_its_least() {
+    let dom = gallery_of(alpha_beta());
+    assert_eq!(
+        style(&dom, ".theoria-panel", "min-width"),
+        Some("220px"),
+        "{dom}"
+    );
+}
+
+#[test]
+fn the_stage_shrinks_no_narrower_than_200px() {
+    let dom = gallery_of(alpha_beta());
+    assert_eq!(
+        style(&dom, ".theoria-stage", "min-width"),
+        Some("200px"),
+        "{dom}"
+    );
+}
+
+#[test]
+fn a_gallery_opened_at_no_such_story_shows_no_divider() {
+    let dom = opened_at(Opening::NoSuchStory("Gamma".into()));
+    assert_eq!(dom.count(".theoria-divider"), 0, "{dom}");
 }

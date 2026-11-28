@@ -55,7 +55,7 @@ Backlog priority tiers (and Rust/Leptos difficulty + rationale) come from the
 | T17 | **Typed controls**: args as signals, bounded numbers, color, choice | ✅ done ([T17](T17-typed-controls.md)) |
 | T14 | **A URL for each story**: `?story=<full name>` opens it; e2e drives stories by URL | T14.0 done ([T14](T14-deep-linking.md)) |
 | T18 | **Struct playgrounds**: `#[derive(StoryArg)]`, a control per field, groups, reset, the value as code | ✅ done ([T18](T18-struct-playgrounds.md)) |
-| T19 | **Resizable columns**: drag the divider between the stage and a side column | next ([T19](T19-resizable-columns.md)) |
+| T19 | **Resizable columns**: drag the divider between the stage and a side column | T19.0 done ([T19](T19-resizable-columns.md)) |
 
 **Backlog** (pull when an slp slice needs it)
 

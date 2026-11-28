@@ -73,15 +73,22 @@ exclude_re = [
     # theoria-e2e reads the clipboard after a click and checks what Copy says
     # with the clipboard there, refusing, and missing.
     'components/controls.rs:.*(replace copy with \(\)|in copy)$',
-    'components/gallery.rs:.*replace (show_in_url|replace_url|save_selected) with \(\)',
+    'components/gallery.rs:.*replace (show_in_url|replace_url|save) with \(\)',
     'components/gallery.rs:.*replace storage -> ',
-    # Reading them is equivalent without `csr`: `story_in_url` and
-    # `location` are `None` there already, and the other values these
-    # mutants give `location` and `load_selected` name no story (no `story`
-    # key in the query, no story called "" or "xyzzy"), which opens the
-    # first story, as `None` does. The other `story_in_url` mutants name a
-    # missing story, which the gallery tests catch.
+    # The divider's pointer capture and its measure of the drawn stage and
+    # panel run only in its `on:` handlers, and a leptotes render draws no
+    # element to measure, so `measure` is `None` there already. theoria-e2e
+    # drags the divider, presses keys on it, and focuses it.
+    'components/gallery.rs:.*replace capture with \(\)',
+    'components/gallery.rs:.*replace Columns::measure -> ',
+    # Reading them is equivalent without `csr`: `story_in_url`, `location`,
+    # and `load` are `None` there already, and the other values these
+    # mutants give `location` and `load` name no story (no `story` key in
+    # the query, no story called "" or "xyzzy") and no width, which opens the
+    # first story at the default width, as `None` does. The other
+    # `story_in_url` mutants name a missing story, which the gallery tests
+    # catch.
     'components/gallery.rs:.*replace story_in_url -> Option<String> with None',
     'components/gallery.rs:.*replace location -> ',
-    'components/gallery.rs:.*replace load_selected -> ',
+    'components/gallery.rs:.*replace load -> ',
 ]

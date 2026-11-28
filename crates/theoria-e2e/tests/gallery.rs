@@ -23,9 +23,9 @@ use anyhow::{Context, Result, ensure};
 use axum::Router;
 use playwright_rs::protocol::click::KeyboardModifier;
 use playwright_rs::protocol::{
-    AriaRole, GetByRoleOptions, Locator, Page, Playwright, SelectOption,
+    AriaRole, BoundingBox, GetByRoleOptions, Locator, Page, Playwright, SelectOption, Viewport,
 };
-use playwright_rs::{ClickOptions, expect, expect_page};
+use playwright_rs::{ClickOptions, DragToOptions, Position, expect, expect_page};
 use serde::Deserialize;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tower_http::services::ServeDir;
@@ -1982,6 +1982,293 @@ async fn selecting_a_story_keeps_the_rest_of_the_url() -> Result<()> {
             .to_have_url(&site.at("?theme=dark&story=StoryNav/Flat/Single#panel"))
             .await
             .context("only the story changes in the URL")
+    })
+    .await
+}
+
+/// The divider between the stage and the panel.
+fn divider(page: &Page) -> Locator {
+    by_role(
+        &page.locator(".theoria"),
+        AriaRole::Separator,
+        "Panel width",
+    )
+}
+
+fn panel(page: &Page) -> Locator {
+    page.locator(".theoria > .theoria-panel")
+}
+
+fn stage(page: &Page) -> Locator {
+    page.locator(".theoria > .theoria-stage")
+}
+
+/// Where `locator` is drawn, once it is shown.
+async fn laid_out(locator: &Locator, what: &str) -> Result<BoundingBox> {
+    expect(locator.clone())
+        .to_be_visible()
+        .await
+        .with_context(|| format!("{what} is shown"))?;
+    locator
+        .bounding_box()
+        .await
+        .with_context(|| format!("measure {what}"))?
+        .with_context(|| format!("{what} is laid out"))
+}
+
+async fn panel_width(page: &Page) -> Result<f64> {
+    Ok(laid_out(&panel(page), "the panel").await?.width)
+}
+
+/// Drags the divider, from its middle, to `x` in the window, at its own
+/// height. `drag_to` rather than the mouse's own moves, which can hang with a
+/// button held under headless Linux.
+async fn drag_divider_to(page: &Page, x: f64) -> Result<()> {
+    let row = page.locator(".theoria");
+    let at = laid_out(&row, "the gallery").await?;
+    let from = laid_out(&divider(page), "the divider").await?;
+    let to = Position {
+        x: x - at.x,
+        y: from.y + from.height / 2.0 - at.y,
+    };
+    divider(page)
+        .drag_to(
+            &row,
+            Some(DragToOptions::builder().target_position(to).build()),
+        )
+        .await
+        .with_context(|| format!("drag the divider to {x}px"))?;
+    settle(page).await
+}
+
+/// Drags the divider `by` pixels to the right (left when negative).
+async fn drag_divider_by(page: &Page, by: f64) -> Result<()> {
+    let from = laid_out(&divider(page), "the divider").await?;
+    drag_divider_to(page, from.x + from.width / 2.0 + by).await
+}
+
+fn ensure_width(what: &str, width: f64, wanted: f64) -> Result<()> {
+    ensure!(
+        (width - wanted).abs() < 1.0,
+        "{what} is {width}px, not {wanted}px"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn dragging_the_divider_into_the_stage_widens_the_panel_as_far() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        let before = panel_width(page).await?;
+
+        drag_divider_by(page, -100.0).await?;
+
+        ensure_width("the panel", panel_width(page).await?, before + 100.0)
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn dragging_the_divider_across_the_stage_leaves_the_stage_200px() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        drag_divider_to(page, 1.0).await?;
+
+        let stage = laid_out(&stage(page), "the stage").await?;
+        ensure_width("the stage", stage.width, 200.0)
+    })
+    .await
+}
+
+/// `offsetWidth` of what `locator` finds, the whole pixels the gallery
+/// measures its columns in.
+async fn offset_width(locator: &Locator, what: &str) -> Result<i32> {
+    expect(locator.clone())
+        .to_be_visible()
+        .await
+        .with_context(|| format!("{what} is shown"))?;
+    locator
+        .evaluate("el => el.offsetWidth", None::<()>)
+        .await
+        .with_context(|| format!("measure {what}"))
+}
+
+/// The panel's most as the stage and panel are drawn: all but 200px of the
+/// room the two of them share.
+async fn most_leaving_the_stage_200px(page: &Page) -> Result<String> {
+    let panel = offset_width(&panel(page), "the panel").await?;
+    let stage = offset_width(&stage(page), "the stage").await?;
+    Ok((panel + stage - 200).to_string())
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn the_divider_reads_the_most_that_leaves_the_stage_200px() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        let most = most_leaving_the_stage_200px(page).await?;
+
+        expect(divider(page))
+            .to_have_attribute("aria-valuemax", &most)
+            .await
+            .context("the divider's most leaves the stage 200px")
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn focusing_the_divider_after_the_window_narrows_reads_its_new_most() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        let wide = most_leaving_the_stage_200px(page).await?;
+        expect(divider(page))
+            .to_have_attribute("aria-valuemax", &wide)
+            .await
+            .context("the divider reads its most in the wide window")?;
+        page.set_viewport_size(Viewport {
+            width: 1000,
+            height: 720,
+        })
+        .await
+        .context("narrow the window")?;
+        settle(page).await?;
+        let narrow = most_leaving_the_stage_200px(page).await?;
+
+        divider(page).focus().await.context("focus the divider")?;
+
+        expect(divider(page))
+            .to_have_attribute("aria-valuemax", &narrow)
+            .await
+            .with_context(|| format!("the divider's most went from {wide}"))
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn releasing_the_divider_ends_the_drag() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        drag_divider_by(page, -100.0).await?;
+        let dragged = panel_width(page).await?;
+        let on = laid_out(&divider(page), "the divider").await?;
+
+        // Still over the divider, the one place its moves are heard once the
+        // button is up, and off where the drag ended, so a drag left running
+        // would move the panel.
+        page.mouse()
+            .move_to(on.x + 1.0, on.y + on.height / 2.0, None)
+            .await
+            .context("move the pointer along the divider")?;
+        settle(page).await?;
+
+        ensure_width("the panel", panel_width(page).await?, dragged)
+    })
+    .await
+}
+
+/// Presses `key` on the divider and returns the panel's width before and after.
+async fn press_on_the_divider(page: &Page, key: &str) -> Result<(f64, f64)> {
+    let before = panel_width(page).await?;
+    divider(page)
+        .press(key, None)
+        .await
+        .with_context(|| format!("press {key} on the divider"))?;
+    settle(page).await?;
+    Ok((before, panel_width(page).await?))
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn arrow_left_on_the_divider_widens_the_panel_by_16px() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        let (before, after) = press_on_the_divider(page, "ArrowLeft").await?;
+
+        ensure_width("the panel", after, before + 16.0)
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_reload_keeps_the_panels_width() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        drag_divider_by(page, -100.0).await?;
+        let dragged = panel_width(page).await?;
+
+        page.reload(None).await.context("reload the page")?;
+
+        ensure_width("the panel", panel_width(page).await?, dragged)
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_double_click_on_the_divider_puts_the_panels_first_width_back() -> Result<()> {
+    with_gallery(async |page: &Page| {
+        let first = panel_width(page).await?;
+        drag_divider_by(page, -100.0).await?;
+
+        divider(page)
+            .dblclick(None)
+            .await
+            .context("double-click the divider")?;
+        settle(page).await?;
+
+        ensure_width("the panel", panel_width(page).await?, first)
+    })
+    .await
+}
+
+/// Runs `body` on the gallery reloaded with a stored panel width wider than
+/// any window.
+async fn with_a_panel_too_wide_for_the_window(
+    body: impl AsyncFnOnce(&Page) -> Result<()>,
+) -> Result<()> {
+    with_gallery(async |page: &Page| {
+        laid_out(&panel(page), "the panel").await?;
+        page.evaluate::<(), ()>(
+            "() => localStorage.setItem('theoria:panel-width', '5000')",
+            None,
+        )
+        .await
+        .context("store a panel width of 5000px")?;
+        page.reload(None).await.context("reload the page")?;
+        body(page).await
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_panel_too_wide_for_the_window_leaves_the_stage_200px() -> Result<()> {
+    with_a_panel_too_wide_for_the_window(async |page: &Page| {
+        let stage = laid_out(&stage(page), "the stage").await?;
+        ensure_width("the stage", stage.width, 200.0)
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn a_panel_too_wide_for_the_window_reads_as_wide_as_it_is_drawn() -> Result<()> {
+    with_a_panel_too_wide_for_the_window(async |page: &Page| {
+        let drawn = offset_width(&panel(page), "the panel").await?;
+
+        expect(divider(page))
+            .to_have_attribute("aria-valuenow", &drawn.to_string())
+            .await
+            .context("the divider reads the panel's drawn width")
+    })
+    .await
+}
+
+#[tokio::test]
+#[ignore = "needs the built gallery and Chromium; run with --run-ignored all after theoria build --config theoria-e2e.toml"]
+async fn arrow_right_narrows_a_panel_too_wide_for_the_window_from_its_drawn_width() -> Result<()> {
+    with_a_panel_too_wide_for_the_window(async |page: &Page| {
+        let (before, after) = press_on_the_divider(page, "ArrowRight").await?;
+
+        ensure_width("the panel", after, before - 16.0)
     })
     .await
 }
